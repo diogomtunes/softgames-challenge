@@ -1,306 +1,341 @@
 import {
-  Container,
-  Application,
-  Assets,
-  Text,
-  TextStyle,
-  // ParticleContainer,
-} from "pixi.js";
-import { Emitter } from "@pixi/particle-emitter";
-import { GameManager } from "../core/GameManager";
-import { Button } from "../ui/Button";
+	Container,
+	Application,
+	Assets,
+	Text,
+	TextStyle,
+	// ParticleContainer, // Ended up not using this due to visual glitch problems
+} from 'pixi.js';
+import { Emitter } from '@pixi/particle-emitter';
+import { Game } from '../core/Game';
+import { isMobileDevice, isUsingHeight, scaled } from '../core/Utils';
 
-export class PhoenixFlame extends Container {
-  private gameManager: GameManager;
-  // private particleContainer!: ParticleContainer;
-  private particleContainer!: Container;
-  private backButton!: Button;
-  private title!: Text;
-  private particleCountText!: Text;
-  private normalEmitter: Emitter | null = null;
-  private intenseEmitter: Emitter | null = null;
-  private app: Application;
-  private boundPointerMove: (event: PointerEvent) => void;
-  private boundPointerDown: (event: PointerEvent) => void;
-  private boundPointerUp: (event: PointerEvent) => void;
+/**
+ * Interactive particle flame game with mouse/touch controls to intensify the flame.
+ *
+ * Implemented using https://particle-emitter.pixijs.io/docs/
+ *
+ * Interactive editor here: https://particle-emitter-editor.pixijs.io/#pixieDust
+ *
+ * Particle emitters taken from https://particle-emitter.pixijs.io/examples/flame.html
+ *
+ * Features two particle emitters (normal and intense) that can be switched by pressing the mouse / tap the screen.
+ *
+ * Has real-time particle count display.
+ *
+ * @extends Game
+ */
+export class PhoenixFlame extends Game {
+	// UI Constants
+	private readonly TITLE_FONT_SIZE_PORTRAIT = 40;
+	private readonly TITLE_FONT_SIZE_LANDSCAPE = 48;
+	private readonly PARTICLE_COUNT_FONT_SIZE = 32;
+	private readonly EMITTER_Y_OFFSET = 100;
+	private readonly TITLE_DROP_SHADOW_BLUR = 4;
+	private readonly TITLE_DROP_SHADOW_DISTANCE = 2;
+	private readonly PARTICLE_COUNT_DROP_SHADOW_BLUR = 2;
+	private readonly PARTICLE_COUNT_DROP_SHADOW_DISTANCE = 1;
+	private readonly PARTICLE_COUNT_X_OFFSET = 150;
+	private readonly PARTICLE_COUNT_Y_OFFSET = 100;
 
-  constructor(gameManager: GameManager) {
-    super();
-    this.gameManager = gameManager;
-    this.app = gameManager.getApp();
+	// UI Elements
+	private particleContainer!: Container;
+	private title!: Text;
+	private particleCountText!: Text;
 
-    // Bind event handlers
-    this.boundPointerMove = (event: PointerEvent) => this.onPointerMove(event);
-    this.boundPointerDown = (event: PointerEvent) => this.onPointerDown(event);
-    this.boundPointerUp = (event: PointerEvent) => this.onPointerUp(event);
+	// Particle System
+	private normalEmitter: Emitter | null = null;
+	private intenseEmitter: Emitter | null = null;
+	private normalEmitterConfig: any;
+	private intenseEmitterConfig: any;
 
-    this.setupUI();
-    this.loadParticleTextures();
-    window.addEventListener("pointermove", this.boundPointerMove);
-    window.addEventListener("pointerdown", this.boundPointerDown);
-    window.addEventListener("pointerup", this.boundPointerUp);
-  }
+	// Event Handlers
+	private boundPointerMove: (event: PointerEvent) => void;
+	private boundPointerDown: (event: PointerEvent) => void;
+	private boundPointerUp: (event: PointerEvent) => void;
 
-  private setupUI(): void {
-    // Create particle container with all dynamic properties enabled
-    // this.particleContainer = new ParticleContainer(
-    //   2000,
-    //   {
-    //     vertices: true,
-    //     position: true,
-    //     rotation: true,
-    //     uvs: true,
-    //     tint: true,
-    //     alpha: true,
-    //     scale: true,
-    //   },
-    //   undefined,
-    //   true
-    // );
-    // this.particleContainer.roundPixels = false;
+	constructor(
+		app: Application,
+		backgroundContainer: Container,
+		foregroundContainer: Container
+	) {
+		super(app, backgroundContainer, foregroundContainer);
 
-    // Use regular container for particle emitters (better compatibility)
-    this.particleContainer = new Container();
-    this.addChild(this.particleContainer);
+		this.boundPointerMove = (event: PointerEvent) =>
+			this.onPointerMove(event);
+		this.boundPointerDown = (event: PointerEvent) =>
+			this.onPointerDown(event);
+		this.boundPointerUp = (event: PointerEvent) => this.onPointerUp(event);
+	}
 
-    // Create back button in top right corner
-    this.backButton = new Button({
-      emoji: "🏠",
-      color: 0xffd700, // Golden color
-      width: 60,
-      height: 40,
-      fontSize: 20,
-      borderRadius: 8,
-      onClick: () => this.gameManager.backToMainMenu(),
-    });
+	private loadTexturesForConfig(config: any): void {
+		const textureRandomBehavior = config.behaviors.find(
+			(b: any) => b.type === 'textureRandom'
+		);
 
-    // Position in top right corner
-    this.backButton.x = this.app.screen.width - 100;
-    this.backButton.y = 60;
-    this.addChild(this.backButton);
+		if (textureRandomBehavior && textureRandomBehavior.config.textures) {
+			const texturePaths = textureRandomBehavior.config.textures;
+			const loadedTextures = [];
 
-    // Add title
-    this.title = new Text(
-      "Hold the left mouse button to intensify the flame",
-      new TextStyle({
-        fontFamily: "Arial, sans-serif",
-        fontSize: 24,
-        fill: 0xffffff,
-        align: "center",
-        fontWeight: "bold",
-        dropShadow: true,
-        dropShadowColor: 0x000000,
-        dropShadowBlur: 4,
-        dropShadowAngle: Math.PI / 6,
-        dropShadowDistance: 2,
-      })
-    );
-    this.title.anchor.set(0.5, 0.5);
-    this.title.x = this.app.screen.width / 2;
-    this.title.y = this.app.screen.height * 0.2; // 20% from the top
-    this.addChild(this.title);
+			for (const texturePath of texturePaths) {
+				const fullPath = `assets/particles/${texturePath}`;
+				const texture = Assets.get(fullPath);
+				if (texture) {
+					loadedTextures.push(texture);
+				} else {
+					console.error(`Texture not found in cache: ${fullPath}`);
+				}
+			}
 
-    // Add particle count subtitle
-    this.particleCountText = new Text(
-      "Particle count: 2000",
-      new TextStyle({
-        fontFamily: "Arial, sans-serif",
-        fontSize: 18,
-        fill: 0xffffff,
-        align: "left",
-        fontWeight: "normal",
-        dropShadow: true,
-        dropShadowColor: 0x000000,
-        dropShadowBlur: 2,
-        dropShadowAngle: Math.PI / 6,
-        dropShadowDistance: 1,
-      })
-    );
-    this.particleCountText.anchor.set(0, 0.5);
-    this.particleCountText.x =
-      this.app.screen.width / 2 - this.particleCountText.width / 2; // Offset from center to account for left alignment
-    this.particleCountText.y = this.app.screen.height * 0.2 + 40; // Below the title
-    this.addChild(this.particleCountText);
-  }
+			// Replace the string paths with loaded PIXI Texture objects for the emitters to use
+			textureRandomBehavior.config.textures = loadedTextures;
+		}
+	}
 
-  private async loadParticleTextures(): Promise<void> {
-    try {
-      // Load both emitter configurations from JSON files
-      const [normalResponse, intenseResponse] = await Promise.all([
-        fetch("assets/particles/flame.json"),
-        fetch("assets/particles/flame_hotter.json"),
-      ]);
+	private loadParticleTextures(): void {
+		const originalNormalConfig = Assets.cache.get('particle-config-flame');
+		const originalIntenseConfig = Assets.cache.get(
+			'particle-config-flame_hotter'
+		);
 
-      const normalConfig = await normalResponse.json();
-      const intenseConfig = await intenseResponse.json();
+		// Create deep copies of the configurations to avoid modifying the cached originals
+		this.normalEmitterConfig = JSON.parse(
+			JSON.stringify(originalNormalConfig)
+		);
+		this.intenseEmitterConfig = JSON.parse(
+			JSON.stringify(originalIntenseConfig)
+		);
 
-      // Update positions for both configurations
-      const position = {
-        x: this.app.screen.width / 2,
-        y: this.app.screen.height - 100,
-      };
+		const position = {
+			x: this.app.screen.width * 0.5,
+			y: this.app.screen.height - scaled(this.EMITTER_Y_OFFSET),
+		};
 
-      normalConfig.pos = position;
-      intenseConfig.pos = position;
+		this.normalEmitterConfig.pos = position;
+		this.intenseEmitterConfig.pos = position;
 
-      // Enforce 10 particle limit as per assignment requirements
-      // Note: Only for the normal emitter, not the intense emitter
-      normalConfig.maxParticles = 10;
+		// Enforce 10 particle limit as per assignment requirements
+		// Note: Only for the normal emitter, not the intense emitter
+		this.normalEmitterConfig.maxParticles = 10;
 
-      // Load textures for both configurations
-      await this.loadTexturesForConfig(normalConfig);
-      await this.loadTexturesForConfig(intenseConfig);
+		this.loadTexturesForConfig(this.normalEmitterConfig);
+		this.loadTexturesForConfig(this.intenseEmitterConfig);
+	}
 
-      // Create both emitters in the particle container
-      this.normalEmitter = new Emitter(this.particleContainer, normalConfig);
-      this.intenseEmitter = new Emitter(this.particleContainer, intenseConfig);
+	private createEmitters(): void {
+		this.normalEmitter = new Emitter(
+			this.particleContainer,
+			this.normalEmitterConfig
+		);
+		this.intenseEmitter = new Emitter(
+			this.particleContainer,
+			this.intenseEmitterConfig
+		);
+		this.normalEmitter.emit = true;
+		this.intenseEmitter.emit = false;
+	}
 
-      // Start with normal emitter
-      this.normalEmitter.emit = true;
-      this.intenseEmitter.emit = false;
+	public initialize(): void {
+		this.loadParticleTextures();
+	}
 
-      // Update both emitters in the ticker
-      this.app.ticker.add(this.updateEmitters, this);
-    } catch (error) {
-      console.error("Failed to load particle textures or config:", error);
-    }
-  }
+	public addEventListeners(): void {
+		window.addEventListener('pointermove', this.boundPointerMove);
+		window.addEventListener('pointerdown', this.boundPointerDown);
+		window.addEventListener('pointerup', this.boundPointerUp);
+	}
 
-  private async loadTexturesForConfig(config: any): Promise<void> {
-    const textureRandomBehavior = config.behaviors.find(
-      (b: any) => b.type === "textureRandom"
-    );
+	public buildBackground(): void {
+		// No background needed for PhoenixFlame - particles are the main visual
+	}
 
-    if (textureRandomBehavior && textureRandomBehavior.config.textures) {
-      const texturePaths = textureRandomBehavior.config.textures;
-      const loadedTextures = [];
+	public buildForeground(): void {
+		// Create particle container with all dynamic properties enabled
+		// this.particleContainer = new ParticleContainer(
+		//   2000,
+		//   {
+		//     vertices: true,
+		//     position: true,
+		//     rotation: true,
+		//     uvs: true,
+		//     tint: true,
+		//     alpha: true,
+		//     scale: true,
+		//   },
+		//   undefined,
+		//   true
+		// );
+		// this.particleContainer.roundPixels = false;
 
-      // Load each texture specified in the config
-      for (const texturePath of texturePaths) {
-        const fullPath = `assets/particles/${texturePath}`;
-        const texture = await Assets.load(fullPath);
-        loadedTextures.push(texture);
-      }
+		// Use regular container for particle emitters (better compatibility)
+		this.particleContainer = new Container();
+		this.foregroundContainer.addChild(this.particleContainer);
 
-      // Replace the string paths with loaded PIXI Texture objects
-      textureRandomBehavior.config.textures = loadedTextures;
-    }
-  }
+		// Title
+		this.title = new Text(
+			'',
+			new TextStyle({
+				fontFamily: 'Arial, sans-serif',
+				fill: 0xffffff,
+				align: 'center',
+				fontWeight: 'bold',
+				dropShadow: true,
+				dropShadowColor: 0x000000,
+				dropShadowAngle: Math.PI / 6,
+			})
+		);
+		this.title.anchor.set(0.5, 0.5);
+		this.foregroundContainer.addChild(this.title);
 
-  private updateEmitters(): void {
-    if (this.normalEmitter) {
-      this.normalEmitter.update(this.app.ticker.deltaMS * 0.001);
-    }
-    if (this.intenseEmitter) {
-      this.intenseEmitter.update(this.app.ticker.deltaMS * 0.001);
-    }
+		// Particle count
+		this.particleCountText = new Text(
+			'',
+			new TextStyle({
+				fontFamily: 'Arial, sans-serif',
+				fill: 0xffffff,
+				align: 'left',
+				fontWeight: 'normal',
+				dropShadow: true,
+				dropShadowColor: 0x000000,
+				dropShadowAngle: Math.PI / 6,
+			})
+		);
+		this.particleCountText.anchor.set(0, 0.5);
+		this.foregroundContainer.addChild(this.particleCountText);
 
-    // Update particle count display
-    this.updateParticleCount();
-  }
+		// Emitters
+		this.createEmitters();
+	}
 
-  private updateParticleCount(): void {
-    let particleCount = 0;
+	public update(deltaTime: number): void {
+		if (this.normalEmitter) {
+			this.normalEmitter.update(deltaTime * 0.01);
+		}
+		if (this.intenseEmitter) {
+			this.intenseEmitter.update(deltaTime * 0.01);
+		}
 
-    // Get total particle count from both emitters, regardless of which is emitting
-    if (this.normalEmitter) {
-      particleCount += this.normalEmitter.particleCount;
-    }
-    if (this.intenseEmitter) {
-      particleCount += this.intenseEmitter.particleCount;
-    }
+		this.updateParticleCount();
+	}
 
-    // Update the display
-    this.particleCountText.text = `Particle count: ${particleCount}`;
-  }
+	public start(): void {
+		this.app.ticker.add(this.update, this);
+	}
 
-  private updateEmitterPosition(newX: number, newY: number): void {
-    if (this.normalEmitter) {
-      this.normalEmitter.updateSpawnPos(newX, newY);
-    }
-    if (this.intenseEmitter) {
-      this.intenseEmitter.updateSpawnPos(newX, newY);
-    }
-  }
+	public onResize(): void {
+		// Title
+		// Note: this could use a dynamic max text width to wrap, but using the hard coded \n placement makes it visually cleaner
+		this.title.text = isMobileDevice()
+			? `Press screen ${isUsingHeight() ? '\n' : ' '}to intensify the flame`
+			: `Hold the left mouse button ${
+					isUsingHeight() ? '\n' : ' '
+				}to intensify the flame`;
 
-  private onPointerMove(event: PointerEvent): void {
-    this.updateEmitterPosition(event.x, event.y);
-  }
+		this.title.style.fontSize = scaled(
+			isUsingHeight()
+				? this.TITLE_FONT_SIZE_PORTRAIT
+				: this.TITLE_FONT_SIZE_LANDSCAPE
+		);
+		this.title.style.dropShadowBlur = scaled(this.TITLE_DROP_SHADOW_BLUR);
+		this.title.style.dropShadowDistance = scaled(
+			this.TITLE_DROP_SHADOW_DISTANCE
+		);
+		this.title.x = this.app.screen.width * 0.5;
+		this.title.y = this.app.screen.height * 0.2;
 
-  private onPointerDown(_event: PointerEvent): void {
-    this.intensifyFlame();
-  }
+		// Particle count
+		this.particleCountText.style.fontSize = scaled(
+			this.PARTICLE_COUNT_FONT_SIZE
+		);
+		this.particleCountText.style.dropShadowBlur = scaled(
+			this.PARTICLE_COUNT_DROP_SHADOW_BLUR
+		);
+		this.particleCountText.style.dropShadowDistance = scaled(
+			this.PARTICLE_COUNT_DROP_SHADOW_DISTANCE
+		);
+		this.particleCountText.x =
+			this.app.screen.width * 0.5 - scaled(this.PARTICLE_COUNT_X_OFFSET);
+		this.particleCountText.y =
+			this.app.screen.height * 0.2 + scaled(this.PARTICLE_COUNT_Y_OFFSET);
 
-  private onPointerUp(_event: PointerEvent): void {
-    this.normalizeFlame();
-  }
+		const position = {
+			x: this.app.screen.width * 0.5,
+			y: this.app.screen.height - scaled(this.EMITTER_Y_OFFSET),
+		};
 
-  private intensifyFlame(): void {
-    // Switch to intense emitter
-    if (this.normalEmitter) {
-      this.normalEmitter.emit = false;
-    }
-    if (this.intenseEmitter) {
-      this.intenseEmitter.emit = true;
-    }
-  }
+		if (this.normalEmitter) {
+			this.normalEmitter.updateSpawnPos(position.x, position.y);
+		}
+		if (this.intenseEmitter) {
+			this.intenseEmitter.updateSpawnPos(position.x, position.y);
+		}
+	}
 
-  private normalizeFlame(): void {
-    // Switch back to normal emitter
-    if (this.normalEmitter) {
-      this.normalEmitter.emit = true;
-    }
-    if (this.intenseEmitter) {
-      this.intenseEmitter.emit = false;
-    }
-  }
+	private updateParticleCount(): void {
+		let particleCount = 0;
 
-  public onResize(): void {
-    // Reposition back button in top right corner
-    this.backButton.x = this.app.screen.width - 100;
-    this.backButton.y = 60;
+		// Get total particle count from both emitters, regardless of which is emitting
+		if (this.normalEmitter) {
+			particleCount += this.normalEmitter.particleCount;
+		}
+		if (this.intenseEmitter) {
+			particleCount += this.intenseEmitter.particleCount;
+		}
 
-    // Reposition title
-    this.title.x = this.app.screen.width / 2;
-    this.title.y = this.app.screen.height * 0.2; // 20% from the top
+		this.particleCountText.text = `Particle count: ${particleCount}`;
+	}
 
-    // Reposition particle count text
-    this.particleCountText.x = this.app.screen.width / 2 - 100; // Offset from center to account for left alignment
-    this.particleCountText.y = this.app.screen.height * 0.2 + 40; // Below the title
+	private onPointerMove(event: PointerEvent): void {
+		this.updateEmitterPosition(event.x, event.y);
+	}
 
-    // Update emitter positions
-    const position = {
-      x: this.app.screen.width / 2,
-      y: this.app.screen.height - 100,
-    };
+	private onPointerDown(_event: PointerEvent): void {
+		this.intensifyFlame();
+	}
 
-    if (this.normalEmitter) {
-      this.normalEmitter.updateSpawnPos(position.x, position.y);
-    }
-    if (this.intenseEmitter) {
-      this.intenseEmitter.updateSpawnPos(position.x, position.y);
-    }
-  }
+	private onPointerUp(_event: PointerEvent): void {
+		this.normalizeFlame();
+	}
 
-  public destroy(): void {
-    // Clean up emitters and ticker
-    this.app.ticker.remove(this.updateEmitters, this);
+	private updateEmitterPosition(newX: number, newY: number): void {
+		if (this.normalEmitter) {
+			this.normalEmitter.updateSpawnPos(newX, newY);
+		}
+		if (this.intenseEmitter) {
+			this.intenseEmitter.updateSpawnPos(newX, newY);
+		}
+	}
 
-    // Remove event listeners
-    window.removeEventListener("pointermove", this.boundPointerMove);
-    window.removeEventListener("pointerdown", this.boundPointerDown);
-    window.removeEventListener("pointerup", this.boundPointerUp);
+	private intensifyFlame(): void {
+		if (this.normalEmitter) {
+			this.normalEmitter.emit = false;
+		}
+		if (this.intenseEmitter) {
+			this.intenseEmitter.emit = true;
+		}
+	}
 
-    // Destroy emitters
-    if (this.normalEmitter) {
-      this.normalEmitter.destroy();
-      this.normalEmitter = null;
-    }
-    if (this.intenseEmitter) {
-      this.intenseEmitter.destroy();
-      this.intenseEmitter = null;
-    }
+	private normalizeFlame(): void {
+		if (this.normalEmitter) {
+			this.normalEmitter.emit = true;
+		}
+		if (this.intenseEmitter) {
+			this.intenseEmitter.emit = false;
+		}
+	}
 
-    super.destroy();
-  }
+	public removeEventListeners(): void {
+		window.removeEventListener('pointermove', this.boundPointerMove);
+		window.removeEventListener('pointerdown', this.boundPointerDown);
+		window.removeEventListener('pointerup', this.boundPointerUp);
+	}
+
+	public destroy(): void {
+		if (this.normalEmitter) {
+			this.normalEmitter.destroy();
+		}
+		if (this.intenseEmitter) {
+			this.intenseEmitter.destroy();
+		}
+	}
 }

@@ -1,143 +1,128 @@
-import { AceOfShadows } from "../games/AceOfShadows";
-import { MagicWords } from "../games/MagicWords";
-import { PhoenixFlame } from "../games/PhoenixFlame";
-import { FPSDisplay } from "../ui/FPSDisplay";
-import { Application, Container, Assets } from "pixi.js";
-import { MainMenu } from "../scenes/MainMenu";
-import { Loading } from "../scenes/Loading";
+import { AceOfShadows } from '../games/AceOfShadows';
+import { MagicWords } from '../games/MagicWords';
+import { PhoenixFlame } from '../games/PhoenixFlame';
+import { FPSDisplay } from '../ui/FPSDisplay';
+import { Application, Container } from 'pixi.js';
+import { MainMenu } from '../scenes/MainMenu';
+import { LoadingScreen } from '../scenes/LoadingScreen';
+import { AssetLoader } from './AssetLoader';
+import { GameScene } from '../ui/GameScene';
 
 const GameToClassMap = {
-  ACE_OF_SHADOWS: AceOfShadows,
-  MAGIC_WORDS: MagicWords,
-  PHOENIX_FLAME: PhoenixFlame,
+	ACE_OF_SHADOWS: AceOfShadows,
+	MAGIC_WORDS: MagicWords,
+	PHOENIX_FLAME: PhoenixFlame,
 } as const;
 
 type GameType = keyof typeof GameToClassMap;
 
+/**
+ * Game manager that triggers initial asset loading, handle scene transitions, and typical application lifecycle.
+ *
+ * Manages the flow between loading screen, main menu, and game scenes
+ *
+ * Also handles renderer and scene resize
+ */
 export class GameManager {
-  private app: Application;
-  private currentScene: Container | null = null;
-  private fpsDisplay!: FPSDisplay;
-  private sceneContainer!: Container;
-  private loadingScene: Loading | null = null;
+	// Core
+	private app: Application;
+	private assetLoader: AssetLoader;
 
-  constructor(app: Application) {
-    this.app = app;
+	// Scene Management
+	private currentScene: GameScene | Container | null = null;
+	private sceneContainer!: Container;
+	private loadingScene: LoadingScreen = new LoadingScreen();
 
-    // Start loading process
-    this.startLoading();
-  }
+	// UI Elements
+	private fpsDisplay!: FPSDisplay;
 
-  private startLoading(): void {
-    // Create and show loading scene
-    this.loadingScene = new Loading();
-    this.app.stage.addChild(this.loadingScene);
+	constructor(app: Application) {
+		this.app = app;
+		this.assetLoader = new AssetLoader(this.loadingScene);
 
-    // Start preloading assets with progress tracking
-    this.preloadAssets();
-  }
+		this.onResize();
+		this.setEventListeners();
+		this.startLoading();
+	}
 
-  private async preloadAssets(): Promise<void> {
-    try {
-      // Define all assets to load
-      const assets = [
-        // Main Menu
-        "assets/hyperspace.mp4",
-        "assets/softgames_logo.png",
-        // Ace of Shadows
-        "assets/yu-gi-oh_small.png",
-        "assets/duel_disk.png",
-        "assets/street.png",
-        // Magic Words
-        "assets/neighbourhood.jpg",
-        "assets/unknown.png",
-        //"assets/dialogue/magicwords.json", This fails to load
-        // Add more assets here as needed
-      ];
+	private startLoading(): void {
+		// Loading scene
+		this.app.stage.addChild(this.loadingScene);
 
-      // Load assets with progress tracking
-      await Assets.load(assets, (progress) => {
-        if (this.loadingScene) {
-          this.loadingScene.updateProgress(progress);
-        }
-      });
+		// Trigger asset loading
+		this.assetLoader
+			.loadAllAssets()
+			.then(() => {
+				setTimeout(() => {
+					this.finishLoading();
+				}, 100); // 100ms to ensure the 100% progress is visible
+			})
+			.catch(error => {
+				console.error('Failed to preload assets:', error);
+				// Still finish loading even if some assets fail
+				setTimeout(() => {
+					this.finishLoading();
+				}, 100);
+			});
+	}
 
-      console.log("Assets preloaded successfully");
+	private finishLoading(): void {
+		// Remove loading scene
+		if (this.loadingScene) {
+			this.app.stage.removeChild(this.loadingScene);
+			this.loadingScene.destroy();
+		}
 
-      // Remove loading scene and start main menu
-      this.finishLoading();
-    } catch (error) {
-      console.error("Failed to preload assets:", error);
-      // Still finish loading even if some assets fail
-      this.finishLoading();
-    }
-  }
+		// Create scene container to hold all game scenes
+		this.sceneContainer = new Container();
+		this.app.stage.addChild(this.sceneContainer);
 
-  private finishLoading(): void {
-    // Remove loading scene
-    if (this.loadingScene) {
-      this.app.stage.removeChild(this.loadingScene);
-      this.loadingScene.destroy();
-      this.loadingScene = null;
-    }
+		// Add FPS tracker last so it's always on top
+		this.fpsDisplay = new FPSDisplay(this.app);
+		this.app.stage.addChild(this.fpsDisplay);
 
-    // Create scene container - this will hold all game scenes
-    this.sceneContainer = new Container();
-    this.app.stage.addChild(this.sceneContainer);
+		this.startMainMenu();
+	}
 
-    // Add FPS tracker on top of everything
-    this.fpsDisplay = new FPSDisplay(this.app);
-    this.app.stage.addChild(this.fpsDisplay);
+	private setEventListeners(): void {
+		window.addEventListener('resize', () => {
+			this.onResize();
+		});
+	}
 
-    // Event listeners
-    this.setEventListeners();
+	private clearCurrentScene(): void {
+		if (this.currentScene) {
+			this.sceneContainer.removeChild(this.currentScene);
+			this.currentScene.destroy();
+			this.currentScene = null;
+		}
+	}
 
-    // Start main menu
-    this.startMainMenu();
-  }
+	public startMainMenu(): void {
+		this.clearCurrentScene();
+		this.currentScene = new MainMenu(this);
+		this.sceneContainer.addChild(this.currentScene);
+	}
 
-  private setEventListeners(): void {
-    // Handle window resize
-    window.addEventListener("resize", () => {
-      this.onResize();
-    });
+	public startGame(gameToStart: GameType): void {
+		this.clearCurrentScene();
+		const GameClass = GameToClassMap[gameToStart];
+		this.currentScene = new GameScene(this, GameClass);
+		this.sceneContainer.addChild(this.currentScene);
+	}
 
-    // Prevent context menu on right click
-    window.addEventListener("contextmenu", (e) => e.preventDefault());
-  }
+	public backToMainMenu(): void {
+		this.startMainMenu();
+	}
 
-  private clearCurrentScene(): void {
-    if (this.currentScene) {
-      this.sceneContainer.removeChild(this.currentScene);
-      this.currentScene.destroy();
-      this.currentScene = null;
-    }
-  }
+	public onResize(): void {
+		this.app.renderer.resize(window.innerWidth, window.innerHeight);
+		if (this.currentScene && 'onResize' in this.currentScene) {
+			this.currentScene.onResize();
+		}
+	}
 
-  public startMainMenu(): void {
-    this.clearCurrentScene();
-    this.currentScene = new MainMenu(this);
-    this.sceneContainer.addChild(this.currentScene);
-  }
-
-  public startGame(gameToStart: GameType): void {
-    this.clearCurrentScene();
-    this.currentScene = new GameToClassMap[gameToStart](this);
-    this.sceneContainer.addChild(this.currentScene);
-  }
-
-  public backToMainMenu(): void {
-    this.startMainMenu();
-  }
-
-  public onResize(): void {
-    this.app.renderer.resize(window.innerWidth, window.innerHeight);
-    if (this.currentScene && "onResize" in this.currentScene) {
-      (this.currentScene as any).onResize();
-    }
-  }
-
-  public getApp(): Application {
-    return this.app;
-  }
+	public getApp(): Application {
+		return this.app;
+	}
 }

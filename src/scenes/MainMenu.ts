@@ -1,174 +1,209 @@
-import { Container, Text, TextStyle, Sprite, Assets } from "pixi.js";
-import { GameManager } from "../core/GameManager";
-import { Button } from "../ui/Button";
+import { Container, Text, TextStyle, Sprite, Assets } from 'pixi.js';
+import { GameManager } from '../core/GameManager';
+import { Button } from '../ui/Button';
+import { scaled, resizeToFit } from '../core/Utils';
 
+/**
+ * Main menu scene with game selection buttons, animated background video, and blinking instruction text.
+ *
+ * @extends Container
+ */
 export class MainMenu extends Container {
-  private gameManager: GameManager;
-  private title!: Text;
-  private buttons!: Container;
-  private app: any;
-  private logo!: Sprite;
-  private backgroundVideo!: Sprite;
+	// UI Constants
+	private readonly TITLE_FONT_SIZE = 48;
+	private readonly SUBTITLE_FONT_SIZE = 20;
+	private readonly INSTRUCTION_FONT_SIZE = 24;
+	private readonly TITLE_STROKE_THICKNESS = 4;
+	private readonly SUBTITLE_STROKE_THICKNESS = 2;
+	private readonly INSTRUCTION_STROKE_THICKNESS = 4;
+	private readonly TITLE_COLOR = 0xffffff; // White
+	private readonly SUBTITLE_COLOR = 0xaaaaaa; // Grey
+	private readonly INSTRUCTION_COLOR = 0xcccccc; // Light grey
+	private readonly STROKE_COLOR = 0x000000; // Black
+	private readonly LOGO_SCALE = 1.5;
+	private readonly BUTTON_SPACING = 120;
+	private readonly INSTRUCTION_BOTTOM_OFFSET = 110;
+	private readonly LOGO_Y_POSITION = 0.15;
+	private readonly TITLE_Y_POSITION = 0.3;
+	private readonly SUBTITLE_Y_POSITION = 0.4;
+	private readonly ANIMATION_SPEED = 0.003;
+	private readonly ANIMATION_ALPHA_BASE = 0.6;
+	private readonly ANIMATION_ALPHA_RANGE = 0.3;
+	private readonly ACE_OF_SHADOWS_COLOR = 0x1a232b; // Dark blue-grey
+	private readonly MAGIC_WORDS_COLOR = 0xb39ddb; // Light purple
+	private readonly PHOENIX_FLAME_COLOR = 0xb8860b; // Dark goldenrod
 
-  constructor(gameManager: GameManager) {
-    super();
-    this.gameManager = gameManager;
-    this.app = gameManager.getApp();
-    this.setupBackgroundVideo();
-    this.setupUI().then(() => {
-      this.positionElements();
-    });
-  }
+	// UI Elements
+	private title!: Text;
+	private subtitle!: Text;
+	private buttons!: Container;
+	private logo!: Sprite;
+	private backgroundVideo!: Sprite;
 
-  private async setupBackgroundVideo(): Promise<void> {
-    try {
-      // Load the video texture using PixiJS Assets system (cached)
-      const videoTexture = await Assets.load("assets/hyperspace.mp4");
-      console.log("Video texture loaded", videoTexture);
+	// Core
+	private gameManager: GameManager;
+	private app: any;
 
-      // Create video sprite
-      this.backgroundVideo = new Sprite(videoTexture);
-      this.resizeVideoToFit();
+	constructor(gameManager: GameManager) {
+		super();
+		this.gameManager = gameManager;
+		this.app = gameManager.getApp();
 
-      // Add video as background (behind everything)
-      this.addChildAt(this.backgroundVideo, 0);
-    } catch (error) {
-      console.error("Failed to load background video:", error);
-    }
-  }
+		this.setupBackgroundVideo();
+		this.buildUI();
+		this.onResize();
+	}
 
-  private resizeVideoToFit(): void {
-    if (!this.backgroundVideo) return;
+	private setupBackgroundVideo(): void {
+		const videoTexture = Assets.get('background-video-texture-space');
+		this.backgroundVideo = new Sprite(videoTexture);
+		this.addChildAt(this.backgroundVideo, 0);
+	}
 
-    const videoTexture = this.backgroundVideo.texture;
-    const videoAspectRatio = videoTexture.width / videoTexture.height;
-    const screenAspectRatio = this.app.screen.width / this.app.screen.height;
+	private buildUI(): void {
+		// Softgames logo
+		const logoTexture = Assets.get('assets/sprites/softgames_logo.png');
+		this.logo = new Sprite(logoTexture);
+		this.logo.anchor.set(0.5, 0.5);
+		this.addChild(this.logo);
 
-    if (videoAspectRatio > screenAspectRatio) {
-      // Video is wider than screen - fit to height
-      this.backgroundVideo.height = this.app.screen.height;
-      this.backgroundVideo.width = this.app.screen.height * videoAspectRatio;
-    } else {
-      // Video is taller than screen - fit to width
-      this.backgroundVideo.width = this.app.screen.width;
-      this.backgroundVideo.height = this.app.screen.width / videoAspectRatio;
-    }
+		// Title
+		this.title = new Text(
+			'Game Developer\nAssignment',
+			new TextStyle({
+				fontFamily: 'Arial, sans-serif',
+				fill: this.TITLE_COLOR,
+				align: 'center',
+				fontWeight: 'bold',
+				stroke: this.STROKE_COLOR,
+				strokeThickness: scaled(this.TITLE_STROKE_THICKNESS),
+			})
+		);
+		this.title.anchor.set(0.5, 0.5);
+		this.addChild(this.title);
 
-    // Center the video
-    this.backgroundVideo.x =
-      (this.app.screen.width - this.backgroundVideo.width) / 2;
-    this.backgroundVideo.y =
-      (this.app.screen.height - this.backgroundVideo.height) / 2;
-  }
+		// Subtitle
+		this.subtitle = new Text(
+			'Made by Diogo Antunes',
+			new TextStyle({
+				fontFamily: 'Arial, sans-serif',
+				fill: this.SUBTITLE_COLOR,
+				align: 'center',
+				fontWeight: 'normal',
+				stroke: this.STROKE_COLOR,
+				strokeThickness: scaled(this.SUBTITLE_STROKE_THICKNESS),
+			})
+		);
+		this.subtitle.anchor.set(0.5, 0.5);
+		this.addChild(this.subtitle);
 
-  private async setupUI(): Promise<void> {
-    const logoTexture = await Assets.load("assets/softgames_logo.png");
-    this.logo = new Sprite(logoTexture);
-    this.logo.anchor.set(0.5, 0.5);
-    this.logo.scale.set(1.25); // Scale down the logo
-    this.addChild(this.logo);
+		// Buttons
+		this.buttons = new Container();
+		this.addChild(this.buttons);
+		const games = [
+			{
+				name: 'Ace of Shadows',
+				emoji: '🃏',
+				color: this.ACE_OF_SHADOWS_COLOR,
+				action: () => this.gameManager.startGame('ACE_OF_SHADOWS'),
+			},
+			{
+				name: 'Magic Words',
+				emoji: '🗣️',
+				color: this.MAGIC_WORDS_COLOR,
+				action: () => this.gameManager.startGame('MAGIC_WORDS'),
+			},
+			{
+				name: 'Phoenix Flame',
+				emoji: '🔥',
+				color: this.PHOENIX_FLAME_COLOR,
+				action: () => this.gameManager.startGame('PHOENIX_FLAME'),
+			},
+		];
 
-    // Create title
-    this.title = new Text(
-      "Game Developer\nAssignment",
-      new TextStyle({
-        fontFamily: "Arial, sans-serif",
-        fontSize: 40,
-        fill: 0xffffff,
-        align: "center",
-        fontWeight: "bold",
-        stroke: 0x000000,
-        strokeThickness: 4,
-      })
-    );
-    this.title.anchor.set(0.5, 0.5);
-    this.addChild(this.title);
+		games.forEach((game, index) => {
+			const button = new Button({
+				text: game.name,
+				emoji: game.emoji,
+				color: game.color,
+				onClick: game.action || (() => {}),
+			});
+			button.y = index * scaled(this.BUTTON_SPACING);
+			this.buttons.addChild(button);
+		});
 
-    // Create buttons container
-    this.buttons = new Container();
-    this.addChild(this.buttons);
+		// Blinking text
+		const instruction = new Text(
+			'Select any game to start',
+			new TextStyle({
+				fontFamily: 'Arial, sans-serif',
+				fill: this.INSTRUCTION_COLOR,
+				align: 'center',
+				fontWeight: 'bold',
+				stroke: this.STROKE_COLOR,
+				strokeThickness: scaled(this.INSTRUCTION_STROKE_THICKNESS),
+			})
+		);
+		instruction.anchor.set(0.5, 0.5);
+		this.addChild(instruction);
 
-    // Create game buttons
-    const games = [
-      {
-        name: "Ace of Shadows",
-        emoji: "🃏",
-        color: 0x2c3e50,
-        action: () => this.gameManager.startGame("ACE_OF_SHADOWS"),
-      },
-      {
-        name: "Magic Words",
-        emoji: "🗣️",
-        color: 0x8e44ad,
-        action: () => this.gameManager.startGame("MAGIC_WORDS"),
-      },
-      {
-        name: "Phoenix Flame",
-        emoji: "🔥",
-        color: 0xe74c3c,
-        action: () => this.gameManager.startGame("PHOENIX_FLAME"),
-      },
-    ];
+		// Blinking animation
+		this.app.ticker.add(() => {
+			const time = Date.now() * this.ANIMATION_SPEED;
+			instruction.alpha =
+				this.ANIMATION_ALPHA_BASE +
+				Math.sin(time) * this.ANIMATION_ALPHA_RANGE;
+		});
+	}
 
-    games.forEach((game, index) => {
-      const button = new Button({
-        text: game.name,
-        emoji: game.emoji,
-        color: game.color,
-        onClick: game.action,
-      });
-      button.y = index * 80;
-      this.buttons.addChild(button);
-    });
+	private positionElements(): void {
+		const screenWidth = this.gameManager.getApp().screen.width;
+		const screenHeight = this.gameManager.getApp().screen.height;
 
-    // Create instruction text
-    const instruction = new Text(
-      "Select any game to start",
-      new TextStyle({
-        fontFamily: "Arial, sans-serif",
-        fontSize: 16,
-        fill: 0xcccccc,
-        align: "center",
-        fontWeight: "bold",
-        stroke: 0x000000,
-        strokeThickness: 4,
-      })
-    );
-    instruction.anchor.set(0.5, 0.5);
-    this.addChild(instruction);
+		// Logo
+		this.logo.scale.set(scaled(this.LOGO_SCALE));
+		this.logo.x = screenWidth * 0.5;
+		this.logo.y = screenHeight * this.LOGO_Y_POSITION;
 
-    // Add blinking animation to instruction text
-    this.app.ticker.add(() => {
-      const time = Date.now() * 0.003;
-      instruction.alpha = 0.6 + Math.sin(time) * 0.3;
-    });
-  }
+		// Title
+		this.title.style.fontSize = scaled(this.TITLE_FONT_SIZE);
+		this.title.x = screenWidth * 0.5;
+		this.title.y = screenHeight * this.TITLE_Y_POSITION;
 
-  private positionElements(): void {
-    const screenWidth = this.gameManager.getApp().screen.width;
-    const screenHeight = this.gameManager.getApp().screen.height;
+		// Subtitle
+		this.subtitle.style.fontSize = scaled(this.SUBTITLE_FONT_SIZE);
+		this.subtitle.x = screenWidth * 0.5;
+		this.subtitle.y = screenHeight * this.SUBTITLE_Y_POSITION;
 
-    // Position logo
-    this.logo.x = screenWidth / 2;
-    this.logo.y = screenHeight / 2 - 200;
+		// Buttons
+		this.buttons.x = screenWidth * 0.5;
+		this.buttons.y = screenHeight * 0.5;
+		this.buttons.children.forEach((button, index) => {
+			button.y = index * scaled(this.BUTTON_SPACING);
+		});
 
-    // Center title
-    this.title.x = screenWidth / 2;
-    this.title.y = screenHeight / 2 - 120;
+		// Instruction text
+		const instruction = this.children[this.children.length - 1] as Text;
+		instruction.style.fontSize = scaled(this.INSTRUCTION_FONT_SIZE);
+		instruction.x = screenWidth * 0.5;
+		instruction.y = screenHeight - scaled(this.INSTRUCTION_BOTTOM_OFFSET);
+	}
 
-    // Center buttons
-    this.buttons.x = screenWidth / 2;
-    this.buttons.y = screenHeight / 2 - 20;
+	public onResize(): void {
+		resizeToFit(
+			this.backgroundVideo,
+			this.app.screen.width,
+			this.app.screen.height
+		);
+		this.positionElements();
+	}
 
-    // Position instruction text below buttons
-    const instruction = this.children[this.children.length - 1] as Text;
-    instruction.x = screenWidth / 2;
-    instruction.y = screenHeight / 2 + 220; // Move further down to avoid overlap
-  }
-
-  public onResize(): void {
-    // Resize background video maintaining aspect ratio
-    this.resizeVideoToFit();
-    this.positionElements();
-  }
+	public destroy(): void {
+		this.title.destroy();
+		this.subtitle.destroy();
+		this.buttons.destroy();
+		this.logo.destroy();
+		this.backgroundVideo.destroy();
+		super.destroy();
+	}
 }

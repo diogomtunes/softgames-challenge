@@ -1,363 +1,474 @@
-import { Container, Application, Sprite } from "pixi.js";
-import { GameManager } from "../core/GameManager";
-import { Button } from "../ui/Button";
+import { Sprite, Assets, Container } from 'pixi.js';
+import { Button } from '../ui/Button';
+import { Game } from '../core/Game';
+import { scaled, resizeToFit } from '../core/Utils';
 
-interface Card {
-  sprite: Sprite;
-  x: number;
-  y: number;
-  targetX: number;
-  targetY: number;
-  isMoving: boolean;
-  moveStartTime: number;
-  stackIndex: number;
-  targetRotation: number;
+class Card extends Sprite {
+	// Position tracking
+	initialX: number = 0;
+	targetX: number = 0;
+	initialY: number = 0;
+	targetY: number = 0;
+
+	// Animation state
+	moveTimeElapsed: number = 0;
+	initialRotation: number = 0;
+	targetRotation: number = 0;
+
+	constructor(texture: any) {
+		super(texture);
+		this.anchor.set(0.5, 0.5);
+	}
 }
 
-export class AceOfShadows extends Container {
-  private gameManager: GameManager;
-  private backButton!: Button;
-  private hurryUpButton!: Button;
-  private app: Application;
-  private background!: Sprite;
-  private topDuelDisk!: Sprite;
-  private bottomDuelDisk!: Sprite;
-  private cards: Card[] = [];
-  private topStack: Card[] = [];
-  private bottomStack: Card[] = [];
-  private mainStack: Card[] = [];
-  private lastMoveTime: number = 0;
-  private moveInterval: number = 1000; // 1 second
-  private animationDuration: number = 2000; // 2 seconds
-  private currentTarget: "top" | "bottom" = "top";
+/**
+ * Yu-Gi-Oh! themed card dealing with duel disks holding the card stacks.
+ *
+ * Features 144 card sprites that automatically deal from a central pile to alternating top and bottom stacks,
+ * with smooth animations, rotation effects, and a "Hurry up!" speed boost button.
+ */
+export class AceOfShadows extends Game {
+	// UI Constants
+	private readonly DUEL_DISK_SCALE = 0.3;
+	private readonly CARD_SCALE_INITIAL = 0.2;
+	private readonly CARD_SCALE_RESIZE = 0.25;
+	private readonly DUEL_DISK_Y_OFFSET = 150;
+	private readonly HURRY_UP_BUTTON_OFFSET = 150;
+	private readonly CARD_PILE_RADIUS = 30;
+	private readonly CARD_STACK_OFFSET = 0.05;
 
-  // Speed boost properties
-  private originalMoveInterval: number = 1000;
-  private originalAnimationDuration: number = 2000;
+	// UI Elements
+	private hurryUpButton: Button | null = null;
+	private background!: Sprite;
+	private topDuelDisk!: Sprite;
+	private bottomDuelDisk!: Sprite;
+	private topCardHolder!: Sprite;
+	private bottomCardHolder!: Sprite;
+	private cardContainer!: Container;
 
-  private duelDiskYBorderOffset = 150;
-  private baseScreenWidth = 1920; // Reference screen width for scaling
-  private baseScreenHeight = 1080; // Reference screen height for scaling
+	// Card Management
+	private cards: Card[] = [];
+	private topStack: Card[] = [];
+	private bottomStack: Card[] = [];
+	private mainStack: Card[] = [];
+	private movingCards: Card[] = [];
+	private moveCooldown: number = 0;
+	private moveInterval: number = 1000; // 1 second
+	private animationDuration: number = 2000; // 2 seconds
+	private currentTarget: 'top' | 'bottom' = 'top';
 
-  // End positions for card deck holders (adjustable)
-  private topEndPosition = { x: 0, y: 0 };
-  private bottomEndPosition = { x: 0, y: 0 };
+	// Speed boost properties
+	private readonly boostedMoveInterval: number = 10;
+	private readonly boostedAnimationDuration: number = 200;
 
-  constructor(gameManager: GameManager) {
-    super();
-    this.gameManager = gameManager;
-    this.app = gameManager.getApp();
-    this.setupBackground();
-    this.setupUI();
-    this.createCards();
-    this.startCardDealing();
-  }
+	// End positions for card deck holders
+	private topEndPosition = { x: 0, y: 0 };
+	private bottomEndPosition: { x: number; y: number } = { x: 0, y: 0 };
+	private originalCardCenter = { x: 0, y: 0 };
 
-  private getResponsiveScale(): number {
-    // Calculate scale based on screen size relative to base dimensions
-    const scaleX = this.app.screen.width / this.baseScreenWidth;
-    const scaleY = this.app.screen.height / this.baseScreenHeight;
-    // Use the smaller scale to ensure the duel disk fits on screen
-    return Math.min(scaleX, scaleY) * 0.3; // Base scale of 0.3
-  }
+	public initialize(): void {
+		// Nothing to do here
+	}
 
-  private setupBackground(): void {
-    // Create background sprite
-    this.background = Sprite.from("assets/street.png");
-    this.background.width = this.app.screen.width;
-    this.background.height = this.app.screen.height;
-    this.addChild(this.background);
+	public buildBackground(): void {
+		this.background = new Sprite(Assets.get('assets/sprites/street.jpg'));
+		this.backgroundContainer.addChild(this.background);
+	}
 
-    // Create top duel disk (rotated 180 degrees to face opponent)
-    this.topDuelDisk = Sprite.from("assets/duel_disk.png");
-    this.topDuelDisk.anchor.set(0.5, 0.5);
-    this.topDuelDisk.x = this.app.screen.width / 2;
-    this.topDuelDisk.y = this.duelDiskYBorderOffset; // Position at top
-    this.topDuelDisk.scale.set(this.getResponsiveScale()); // Responsive scale
-    this.topDuelDisk.rotation = Math.PI; // Rotate 180 degrees
-    this.addChild(this.topDuelDisk);
+	public buildForeground(): void {
+		this.createDuelDisks();
+		this.createCards();
 
-    // Create bottom duel disk
-    this.bottomDuelDisk = Sprite.from("assets/duel_disk.png");
-    this.bottomDuelDisk.anchor.set(0.5, 0.5);
-    this.bottomDuelDisk.x = this.app.screen.width / 2;
-    this.bottomDuelDisk.y = this.app.screen.height - this.duelDiskYBorderOffset; // Position at bottom
-    this.bottomDuelDisk.scale.set(this.getResponsiveScale()); // Responsive scale
-    this.addChild(this.bottomDuelDisk);
+		// Hurry up button
+		this.hurryUpButton = new Button({
+			text: 'Hurry up!',
+			color: 0xff6b35, // Orange
+			width: 100,
+			height: 60,
+			fontSize: 16,
+			borderRadius: 8,
+			onClick: () => this.toggleSpeedBoost(),
+		});
+		this.foregroundContainer.addChild(this.hurryUpButton);
+	}
 
-    // Calculate end positions after duel disks are created and positioned
-    this.updateEndPositions();
-  }
+	public start(): void {
+		this.app.ticker.add(this.update, this);
+	}
 
-  private updateEndPositions(): void {
-    // Calculate end positions relative to duel disk image dimensions
-    // Position at 0.3*width and 0.6*height from the center of each duel disk
+	/**
+	 * Deals the top card according to the specified interval.
+	 * Also updates currently moving cards
+	 * @param deltaTime - The time since the last update.
+	 */
+	public update(_deltaTime: number): void {
+		// Tick down the move cooldown
+		this.moveCooldown -= this.app.ticker.deltaMS;
 
-    // Get the duel disk texture dimensions
-    const hardcodedWidth = 1445;
-    const hardcodedHeight = 981;
-    const scale = this.topDuelDisk.scale.x;
-    const duelDiskWidth = hardcodedWidth * scale;
-    const duelDiskHeight = hardcodedHeight * scale;
+		// Check if it's time to move the next card
+		if (this.moveCooldown <= 0 && this.mainStack.length > 0) {
+			this.dealTopCard();
+			this.moveCooldown = this.moveInterval;
+		}
 
-    // Calculate offset from duel disk center (0.5*width, 0.6*height)
+		// Update moving cards
+		for (let i = this.movingCards.length - 1; i >= 0; i--) {
+			const card = this.movingCards[i];
 
-    const offsetX = duelDiskWidth * 0.24;
-    const offsetY = duelDiskHeight * 0.22;
+			card.moveTimeElapsed += this.app.ticker.deltaMS;
+			const progress = Math.min(
+				card.moveTimeElapsed / this.animationDuration,
+				1
+			);
 
-    // Top duel disk end position
-    this.topEndPosition.x = this.topDuelDisk.x + offsetX;
-    this.topEndPosition.y = this.topDuelDisk.y + offsetY;
+			// Ease out animation
+			const easeProgress = 1 - Math.pow(1 - progress, 3);
 
-    // Bottom duel disk end position (flip the Y offset since it's rotated)
-    this.bottomEndPosition.x = this.bottomDuelDisk.x - offsetX;
-    this.bottomEndPosition.y = this.bottomDuelDisk.y - offsetY;
-  }
+			// Move card
+			card.x =
+				card.initialX + (card.targetX - card.initialX) * easeProgress;
+			card.y =
+				card.initialY + (card.targetY - card.initialY) * easeProgress;
 
-  private updateCardScales(): void {
-    const cardScale = this.getResponsiveScale() * 0.8; // Scale cards relative to duel disk scale
-    this.cards.forEach((card) => {
-      card.sprite.scale.set(cardScale);
-    });
-  }
+			// Rotate card
+			card.rotation =
+				card.initialRotation +
+				(card.targetRotation - card.initialRotation) * easeProgress;
 
-  private setupUI(): void {
-    // Create back button in top right corner
-    this.backButton = new Button({
-      emoji: "🏠",
-      color: 0xffd700, // Golden color
-      width: 60,
-      height: 40,
-      fontSize: 20,
-      borderRadius: 8,
-      onClick: () => this.gameManager.backToMainMenu(),
-    });
+			if (progress >= 1) {
+				card.x = card.targetX;
+				card.y = card.targetY;
+				card.rotation = card.targetRotation;
 
-    // Position in top right corner
-    this.backButton.x = this.app.screen.width - 100;
-    this.backButton.y = 60;
-    this.addChild(this.backButton);
+				// Remove from moving cards array
+				this.movingCards.splice(i, 1);
+			}
+		}
+	}
 
-    // Create hurry up button
-    this.hurryUpButton = new Button({
-      text: "Hurry up!",
-      color: 0xff6b35, // Orange color for urgency
-      width: 120,
-      height: 50,
-      fontSize: 16,
-      borderRadius: 8,
-      onClick: () => this.toggleSpeedBoost(),
-    });
+	public onResize(): void {
+		resizeToFit(
+			this.background,
+			this.app.screen.width,
+			this.app.screen.height
+		);
 
-    // Position on the right side of the center stack
-    this.hurryUpButton.x = this.app.screen.width / 2 + 200;
-    this.hurryUpButton.y = this.app.screen.height / 2;
-    this.addChild(this.hurryUpButton);
-  }
+		// Duel disks
+		if (this.topDuelDisk && this.bottomDuelDisk) {
+			this.topDuelDisk.scale.set(1);
+			this.topDuelDisk.x = this.app.screen.width * 0.5;
+			this.topDuelDisk.y = scaled(this.DUEL_DISK_Y_OFFSET);
+			this.topDuelDisk.scale.set(scaled(this.DUEL_DISK_SCALE));
 
-  private toggleSpeedBoost(): void {
-    // Apply speed boost and delete the button
-    this.moveInterval = this.originalMoveInterval * 0.01;
-    this.animationDuration = this.originalAnimationDuration * 0.1;
+			this.bottomDuelDisk.x = this.app.screen.width * 0.5;
+			this.bottomDuelDisk.y =
+				this.app.screen.height - scaled(this.DUEL_DISK_Y_OFFSET);
+			this.bottomDuelDisk.scale.set(scaled(this.DUEL_DISK_SCALE));
 
-    // Remove the button from the scene
-    this.removeChild(this.hurryUpButton);
-    this.hurryUpButton.destroy();
-  }
+			// Update deck end positions after repositioning and rescaling duel disks
+			this.updateEndPositions();
+		}
 
-  private createCards(): void {
-    const centerX = this.app.screen.width / 2;
-    const centerY = this.app.screen.height / 2;
-    const cardScale = this.getResponsiveScale() * 0.75; // Scale cards relative to duel disk scale
+		// Card holders
+		if (this.topCardHolder && this.bottomCardHolder) {
+			this.topCardHolder.x = this.app.screen.width * 0.5;
+			this.topCardHolder.y = scaled(this.DUEL_DISK_Y_OFFSET);
+			this.topCardHolder.scale.set(scaled(this.DUEL_DISK_SCALE));
 
-    // Create 144 cards arranged in a random pile
-    for (let i = 0; i < 144; i++) {
-      const card = Sprite.from("assets/yu-gi-oh_small.png");
+			this.bottomCardHolder.x = this.app.screen.width * 0.5;
+			this.bottomCardHolder.y =
+				this.app.screen.height - scaled(this.DUEL_DISK_Y_OFFSET);
+			this.bottomCardHolder.scale.set(scaled(this.DUEL_DISK_SCALE));
+		}
 
-      // Set card properties
-      card.anchor.set(0.5, 0.5);
-      card.scale.set(cardScale);
+		// Cards
+		this.updateCardScales();
+		this.updateCardPositions();
 
-      // Random position within a circular area (like cards randomly piled)
-      const maxRadius = 30;
-      const randomRadius = Math.random() * maxRadius;
-      const randomAngle = Math.random() * Math.PI * 2;
+		// Hurry up button
+		if (this.hurryUpButton && this.hurryUpButton.parent) {
+			this.hurryUpButton.x =
+				this.app.screen.width * 0.5 +
+				scaled(this.HURRY_UP_BUTTON_OFFSET);
+			this.hurryUpButton.y = this.app.screen.height * 0.5;
+		}
+	}
 
-      const x = centerX + Math.cos(randomAngle) * randomRadius;
-      const y = centerY + Math.sin(randomAngle) * randomRadius;
+	public destroy(): void {
+		this.cards.forEach(card => {
+			card.destroy();
+		});
+		this.cards = [];
+		this.topStack = [];
+		this.bottomStack = [];
+		this.mainStack = [];
+		this.movingCards = [];
 
-      card.x = x;
-      card.y = y;
+		if (this.topDuelDisk) this.topDuelDisk.destroy();
+		if (this.bottomDuelDisk) this.bottomDuelDisk.destroy();
+		if (this.topCardHolder) this.topCardHolder.destroy();
+		if (this.bottomCardHolder) this.bottomCardHolder.destroy();
+		if (this.cardContainer) this.cardContainer.destroy();
+		this.background.destroy();
+	}
 
-      // Add random rotation
-      card.rotation = Math.random() * Math.PI * 2; // Random rotation
+	private createDuelDisks(): void {
+		// Top duel disk
+		this.topDuelDisk = new Sprite(
+			Assets.get('assets/sprites/duel_disk.png')
+		);
+		this.topDuelDisk.anchor.set(0.5, 0.5);
+		this.topDuelDisk.x = this.app.screen.width * 0.5;
+		this.topDuelDisk.y = scaled(this.DUEL_DISK_Y_OFFSET);
+		this.topDuelDisk.rotation = Math.PI;
+		this.foregroundContainer.addChild(this.topDuelDisk);
 
-      const cardData: Card = {
-        sprite: card,
-        x: card.x,
-        y: card.y,
-        targetX: card.x,
-        targetY: card.y,
-        isMoving: false,
-        moveStartTime: 0,
-        stackIndex: i,
-        targetRotation: card.rotation,
-      };
+		// Bottom duel disk
+		this.bottomDuelDisk = new Sprite(
+			Assets.get('assets/sprites/duel_disk.png')
+		);
+		this.bottomDuelDisk.anchor.set(0.5, 0.5);
+		this.bottomDuelDisk.x = this.app.screen.width * 0.5;
+		this.foregroundContainer.addChild(this.bottomDuelDisk);
 
-      this.cards.push(cardData);
-      this.mainStack.push(cardData);
-      this.addChild(card);
-    }
-  }
+		// Card containers in-between layers so that the cards can slot into the card holders
+		this.cardContainer = new Container();
+		this.foregroundContainer.addChild(this.cardContainer);
 
-  private startCardDealing(): void {
-    this.app.ticker.add(this.updateCards, this);
-  }
+		// Second layer - duel disk card holders
+		// Top
+		this.topCardHolder = new Sprite(
+			Assets.get('assets/sprites/duel_disk_card_holder.png')
+		);
+		this.topCardHolder.anchor.set(0.5, 0.5);
+		this.topCardHolder.x = this.app.screen.width * 0.5;
+		this.topCardHolder.y = scaled(this.DUEL_DISK_Y_OFFSET);
+		this.topCardHolder.rotation = Math.PI;
+		this.topCardHolder.scale.set(scaled(this.DUEL_DISK_SCALE));
+		this.foregroundContainer.addChild(this.topCardHolder);
 
-  private updateCards(): void {
-    const currentTime = Date.now();
+		// Bottom
+		this.bottomCardHolder = new Sprite(
+			Assets.get('assets/sprites/duel_disk_card_holder.png')
+		);
+		this.bottomCardHolder.anchor.set(0.5, 0.5);
+		this.bottomCardHolder.x = this.app.screen.width * 0.5;
+		this.bottomCardHolder.y =
+			this.app.screen.height - scaled(this.DUEL_DISK_Y_OFFSET);
+		this.bottomCardHolder.scale.set(scaled(this.DUEL_DISK_SCALE));
+		this.foregroundContainer.addChild(this.bottomCardHolder);
+	}
 
-    // Check if it's time to move the next card
-    if (
-      currentTime - this.lastMoveTime >= this.moveInterval &&
-      this.mainStack.length > 0
-    ) {
-      this.moveTopCard();
-      this.lastMoveTime = currentTime;
-    }
+	private updateEndPositions(): void {
+		const offsetX = this.topDuelDisk.width * 0.2;
+		const offsetY = this.topDuelDisk.height * 0.21;
 
-    // Update moving cards
-    this.cards.forEach((card) => {
-      if (card.isMoving) {
-        const elapsed = currentTime - card.moveStartTime;
-        const progress = Math.min(elapsed / this.animationDuration, 1);
+		// Top duel disk end position
+		this.topEndPosition.x = this.topDuelDisk.x + offsetX;
+		this.topEndPosition.y = this.topDuelDisk.y + offsetY;
 
-        // Ease out animation
-        const easeProgress = 1 - Math.pow(1 - progress, 3);
+		// Bottom duel disk end position (flip the Y offset since it's rotated)
+		this.bottomEndPosition.x = this.bottomDuelDisk.x - offsetX;
+		this.bottomEndPosition.y = this.bottomDuelDisk.y - offsetY;
+	}
 
-        // Get initial values
-        const initialX = (card as any).initialX || card.sprite.x;
-        const initialY = (card as any).initialY || card.sprite.y;
-        const initialRotation =
-          (card as any).initialRotation || card.sprite.rotation;
+	private updateCardScales(): void {
+		const cardScale = scaled(this.CARD_SCALE_RESIZE);
+		this.cards.forEach(card => {
+			card.scale.set(cardScale);
+		});
+	}
 
-        // Update position using initial position as starting point
-        card.x = initialX + (card.targetX - initialX) * easeProgress;
-        card.y = initialY + (card.targetY - initialY) * easeProgress;
+	private updateCardPositions(): void {
+		const centerX = this.app.screen.width * 0.5;
+		const centerY = this.app.screen.height * 0.5;
 
-        card.sprite.x = card.x;
-        card.sprite.y = card.y;
+		// Update main stack cards (cards that haven't been dealt yet)
+		this.mainStack.forEach(card => {
+			// Calculate the offset from the original center position
+			const offsetX = card.x - this.originalCardCenter.x;
+			const offsetY = card.y - this.originalCardCenter.y;
 
-        // Smoothly rotate from initial rotation to target rotation (0 degrees)
-        const rotationDiff = card.targetRotation - initialRotation;
-        card.sprite.rotation = initialRotation + rotationDiff * easeProgress;
+			// Apply the same offset to the new center
+			const newX = centerX + offsetX;
+			const newY = centerY + offsetY;
 
-        // Check if animation is complete
-        if (progress >= 1) {
-          card.isMoving = false;
-          card.x = card.targetX;
-          card.y = card.targetY;
-          card.sprite.x = card.x;
-          card.sprite.y = card.y;
-          card.sprite.rotation = card.targetRotation; // Ensure final rotation is exactly 0
-        }
-      }
-    });
-  }
+			card.x = newX;
+			card.y = newY;
+		});
 
-  private moveTopCard(): void {
-    if (this.mainStack.length === 0) return;
+		this.originalCardCenter.x = centerX;
+		this.originalCardCenter.y = centerY;
 
-    const topCard = this.mainStack[this.mainStack.length - 1];
-    this.mainStack.pop();
+		// Top stack
+		this.topStack.forEach((card, index) => {
+			if (this.topEndPosition) {
+				const stackX =
+					this.topEndPosition.x +
+					index * scaled(this.CARD_STACK_OFFSET) * -1;
+				const stackY =
+					this.topEndPosition.y +
+					index * scaled(this.CARD_STACK_OFFSET) * -1;
 
-    // Determine target stack
-    const targetStack =
-      this.currentTarget === "top" ? this.topStack : this.bottomStack;
-    this.currentTarget = this.currentTarget === "top" ? "bottom" : "top";
+				card.x = stackX;
+				card.y = stackY;
+				card.targetX = stackX;
+				card.targetY = stackY;
+				card.targetRotation = Math.PI * 1.5;
+				card.rotation = Math.PI * 1.5;
+			}
+		});
 
-    // Calculate target position using the end position variables
-    const endPosition =
-      this.currentTarget === "top"
-        ? this.topEndPosition
-        : this.bottomEndPosition;
-    const stackX =
-      endPosition.x +
-      targetStack.length * 0.05 * (this.currentTarget === "top" ? -1 : 1); // Add a small offset to give illusion of deck size
-    const stackY =
-      endPosition.y +
-      targetStack.length * 0.05 * (this.currentTarget === "top" ? -1 : 1); // Add a small offset to give illusion of deck size
+		// Bottom stack
+		this.bottomStack.forEach((card, index) => {
+			if (this.bottomEndPosition) {
+				const stackX =
+					this.bottomEndPosition.x +
+					index * scaled(this.CARD_STACK_OFFSET) * 1;
+				const stackY =
+					this.bottomEndPosition.y +
+					index * scaled(this.CARD_STACK_OFFSET) * 1;
 
-    // Store initial position and rotation for smooth animation
-    const initialX = topCard.sprite.x;
-    const initialY = topCard.sprite.y;
-    const initialRotation = topCard.sprite.rotation;
+				card.x = stackX;
+				card.y = stackY;
+				card.targetX = stackX;
+				card.targetY = stackY;
+				card.targetRotation = Math.PI * 0.5;
+				card.rotation = Math.PI * 0.5;
+			}
+		});
+	}
 
-    // Set up card movement
-    topCard.targetX = stackX;
-    topCard.targetY = stackY;
-    topCard.isMoving = true;
-    topCard.moveStartTime = Date.now();
-    topCard.targetRotation = 0; // Target is 0 degrees (straight)
+	private toggleSpeedBoost(): void {
+		// Apply speed boost and delete the button
+		this.moveInterval = this.boostedMoveInterval;
+		this.animationDuration = this.boostedAnimationDuration;
+		this.moveCooldown = this.moveInterval;
 
-    // Store initial values for the animation
-    (topCard as any).initialX = initialX;
-    (topCard as any).initialY = initialY;
-    (topCard as any).initialRotation = initialRotation;
+		// Remove the button from the foreground container
+		if (this.hurryUpButton && this.hurryUpButton.parent) {
+			this.hurryUpButton.parent.removeChild(this.hurryUpButton);
+			this.hurryUpButton.destroy();
+			this.hurryUpButton = null;
+		}
+	}
 
-    // Add to target stack
-    targetStack.push(topCard);
-  }
+	private createCards(): void {
+		const centerX = this.app.screen.width * 0.5;
+		const centerY = this.app.screen.height * 0.5;
 
-  public onResize(): void {
-    // Resize background
-    this.background.width = this.app.screen.width;
-    this.background.height = this.app.screen.height;
+		// Store the original center position for later resize calculations
+		this.originalCardCenter.x = centerX;
+		this.originalCardCenter.y = centerY;
 
-    // Reposition and rescale duel disks
-    this.topDuelDisk.x = this.app.screen.width / 2;
-    this.topDuelDisk.y = this.duelDiskYBorderOffset;
-    this.topDuelDisk.scale.set(this.getResponsiveScale());
+		const cardScale = scaled(this.CARD_SCALE_INITIAL);
 
-    this.bottomDuelDisk.x = this.app.screen.width / 2;
-    this.bottomDuelDisk.y = this.app.screen.height - this.duelDiskYBorderOffset;
-    this.bottomDuelDisk.scale.set(this.getResponsiveScale());
+		for (let i = 0; i < 144; i++) {
+			const card = new Card(
+				Assets.get('assets/sprites/yu-gi-oh_small.png')
+			);
+			card.scale.set(cardScale);
 
-    // Update end positions after repositioning and rescaling duel disks
-    this.updateEndPositions();
+			// Random position within a circular area (like cards randomly piled)
+			const maxRadius = scaled(this.CARD_PILE_RADIUS);
+			const randomRadius = Math.random() * maxRadius;
+			const randomAngle = Math.random() * Math.PI * 2;
 
-    // Update card scales to match the new screen size
-    this.updateCardScales();
+			const x = centerX + Math.cos(randomAngle) * randomRadius;
+			const y = centerY + Math.sin(randomAngle) * randomRadius;
 
-    // Reposition back button in top right corner
-    this.backButton.x = this.app.screen.width - 100;
-    this.backButton.y = 60;
+			card.x = x;
+			card.y = y;
+			card.rotation = Math.random() * Math.PI * 2;
 
-    // Reposition hurry up button (if it still exists)
-    if (this.hurryUpButton && this.hurryUpButton.parent) {
-      this.hurryUpButton.x = this.app.screen.width / 2 + 200;
-      this.hurryUpButton.y = this.app.screen.height / 2;
-    }
-  }
+			// Initialize card properties
+			card.initialX = card.x;
+			card.initialY = card.y;
+			card.targetX = card.x;
+			card.targetY = card.y;
+			card.moveTimeElapsed = 0;
+			card.initialRotation = card.rotation;
+			card.targetRotation = card.rotation;
 
-  public destroy(): void {
-    // Clean up ticker
-    this.app.ticker.remove(this.updateCards, this);
+			this.cards.push(card);
+			this.mainStack.push(card);
+			this.cardContainer.addChild(card);
+		}
+	}
 
-    // Destroy all cards
-    this.cards.forEach((card) => {
-      card.sprite.destroy();
-    });
-    this.cards = [];
-    this.topStack = [];
-    this.bottomStack = [];
-    this.mainStack = [];
+	private dealTopCard(): void {
+		if (this.mainStack.length === 0) return;
 
-    // Destroy sprites
-    if (this.background) this.background.destroy();
-    if (this.topDuelDisk) this.topDuelDisk.destroy();
-    if (this.bottomDuelDisk) this.bottomDuelDisk.destroy();
+		const topCard = this.mainStack.pop();
+		if (!topCard) return;
 
-    super.destroy();
-  }
+		// Hide button if only 2 cards left
+		if (
+			this.mainStack.length <= 2 &&
+			this.hurryUpButton &&
+			this.hurryUpButton.parent
+		) {
+			this.hurryUpButton.visible = false;
+		}
+
+		const targetStack =
+			this.currentTarget === 'top' ? this.topStack : this.bottomStack;
+		const endPosition =
+			this.currentTarget === 'top'
+				? this.topEndPosition
+				: this.bottomEndPosition;
+
+		// Add a small offset to give illusion of deck size
+		const isTopTarget = this.currentTarget === 'top';
+		const stackX =
+			endPosition.x +
+			targetStack.length *
+				scaled(this.CARD_STACK_OFFSET) *
+				(isTopTarget ? -1 : 1);
+		const stackY =
+			endPosition.y +
+			targetStack.length *
+				scaled(this.CARD_STACK_OFFSET) *
+				(isTopTarget ? 1 : -1);
+
+		// Toggle target stack for next card
+		this.currentTarget = this.currentTarget === 'top' ? 'bottom' : 'top';
+
+		// Calculate trajectory
+		topCard.targetX = stackX;
+		topCard.targetY = stackY;
+		topCard.moveTimeElapsed = 0;
+
+		// Calculate target rotation
+		const targetRotation = isTopTarget ? Math.PI * 1.5 : Math.PI * 0.5; // Top stack: 180 degrees, Bottom stack: 0 degrees
+		const currentRotation = topCard.rotation;
+
+		const direction = Math.random() > 0.5 ? 1 : -1; // Randomly choose (1 for clockwise, -1 for counter-clockwise)
+
+		const rotationDiff = targetRotation - currentRotation;
+		let rotationAmount;
+
+		if (direction > 0) {
+			rotationAmount =
+				rotationDiff >= 0 ? rotationDiff : rotationDiff + Math.PI * 2;
+		} else {
+			rotationAmount =
+				rotationDiff <= 0 ? rotationDiff : rotationDiff - Math.PI * 2;
+		}
+		topCard.targetRotation = currentRotation + rotationAmount;
+
+		// Store initial values for the animation
+		topCard.initialX = topCard.x;
+		topCard.initialY = topCard.y;
+		topCard.initialRotation = topCard.rotation;
+
+		targetStack.push(topCard);
+		this.movingCards.push(topCard);
+
+		// Move card to top of display list so it appears on top of other cards in the stack
+		this.cardContainer.setChildIndex(
+			topCard,
+			this.cardContainer.children.length - 1
+		);
+	}
 }
