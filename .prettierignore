@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+*.min.js
+*.min.css
+
+# Generated files
+*.d.ts
+
+# Assets
+public/assets/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.mp4
+*.webm
+
+# Documentation
+*.md
+
+# Config files that should keep their formatting
+tsconfig.json
+vite.config.ts
