@@ -2,7 +2,7 @@
 
 A TypeScript-based tech showcase built with PixiJS v7, featuring three interactive scenes, as per the assignment's requirements.
 
-<div>
+<div align="center">
   <div style="font-size: 24px; font-weight: bold; text-align: center;"><a href="https://diogomtunes.github.io/softgames-challenge/">Live demo hosted on Github pages<a></div>
 </div>
 
@@ -44,7 +44,9 @@ Cards smoothly animate with rotation effects, showcased at different speeds.
 ⭐ Smooth movement animation with randomized rotations  
 ⭐ Multi-layered graphics so simulate decks fitting into the deck slots  
 ⭐ Speed up button  
-⭐ Card deal sounds  
+⭐ Ambience sound  
+⭐ Card deal and card flip sounds  
+⭐ Very special victory animation 😎  
 
 &nbsp;
 
@@ -62,6 +64,7 @@ An interactive dialogue system that combines text and custom emojis, reading dia
 ⭐ Visual novel style visuals during dialogue  
 ⭐ User input to advance dialogue, with sound feedback  
 ⭐ Animated UI elements
+⭐ Ambience sound  
 
 &nbsp;
 
