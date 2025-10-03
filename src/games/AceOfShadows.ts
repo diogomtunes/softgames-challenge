@@ -472,8 +472,8 @@ export class AceOfShadows extends Game {
 			this.cardContainer.children.length - 1
 		);
 
-		const randomSound = `deal_${Math.floor(Math.random() * 3) + 1}`;
-		const volume = Math.random() * 0.1 + 0.3;
+		const randomSound = `deal_${Math.floor(Math.random() * 2) + 1}`;
+		const volume = Math.random() * 0.05 + 0.1;
 		sound.volume(randomSound, volume);
 		sound.play(randomSound);
 	}

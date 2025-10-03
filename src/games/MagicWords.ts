@@ -129,6 +129,7 @@ export class MagicWords extends Game {
 			this.createDialogueUI();
 		}, 1000);
 		this.app.ticker.add(this.update, this);
+		sound.play('street_ambience', { loop: true, volume: 0.5 });
 	}
 
 	private animateDarkening = (): void => {
@@ -489,6 +490,7 @@ export class MagicWords extends Game {
 	}
 
 	public destroy(): void {
+		sound.stop('street_ambience');
 		// Prevent bug when exiting back to main menu
 		if (this.timeout) {
 			clearTimeout(this.timeout);

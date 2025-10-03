@@ -90,7 +90,7 @@ export class Button extends Container {
 	public addEventListeners(options: ButtonOptions): void {
 		// On hover - brighten the color and enlarge
 		this.on('pointerover', () => {
-			sound.play('button_hover');
+			sound.play('button_hover', { volume: 0.1 });
 			const r = Math.min(((this.color >> 16) & 0xff) + 0x33, 0xff);
 			const g = Math.min(((this.color >> 8) & 0xff) + 0x33, 0xff);
 			const b = Math.min((this.color & 0xff) + 0x33, 0xff);
@@ -112,7 +112,7 @@ export class Button extends Container {
 
 		this.on('pointerup', () => {
 			this.scale.set(1.05);
-			sound.play('button_click');
+			sound.play('button_click', { volume: 0.1 });
 			options.onClick();
 		});
 

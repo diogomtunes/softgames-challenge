@@ -34,15 +34,16 @@ const audioAssets: AssetList = [
 	// Ace of Shadows
 	'assets/audio/deal_1.mp3',
 	'assets/audio/deal_2.mp3',
-	'assets/audio/deal_3.mp3',
 	'assets/audio/card_flip.mp3', // UNUSED
+	'assets/audio/yu-gi-oh_full_theme.mp3',
 	// Magic Words
 	'assets/audio/dialogue_next.mp3',
+	'assets/audio/street_ambience.mp3',
 	// Phoenix Flame,
 	'assets/audio/fireplace.mp3',
 	'assets/audio/flame_on.mp3',
 	// Main Menu
-	// TODO ambient music
+	'assets/audio/space_loop.mp3',
 	'assets/audio/button_hover.mp3',
 	'assets/audio/button_click.mp3',
 ];
@@ -118,7 +119,7 @@ export class AssetLoader {
 				return new Promise<void>(resolve => {
 					try {
 						sound.add(alias, {
-							volume: 0.5,
+							volume: 0.2,
 							url: asset,
 							preload: true,
 							loaded: () => {

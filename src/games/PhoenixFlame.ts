@@ -221,7 +221,7 @@ export class PhoenixFlame extends Game {
 
 	public start(): void {
 		this.app.ticker.add(this.update, this);
-		sound.play('fireplace');
+		sound.play('fireplace', { loop: true });
 	}
 
 	public onResize(): void {
@@ -309,8 +309,8 @@ export class PhoenixFlame extends Game {
 	}
 
 	private intensifyFlame(): void {
-		sound.play('flame_on');
-		sound.volume('fireplace', 1);
+		sound.play('flame_on', { volume: 0.5 });
+		sound.volume('fireplace', 0.5);
 		if (this.normalEmitter) {
 			this.normalEmitter.emit = false;
 		}
@@ -320,7 +320,7 @@ export class PhoenixFlame extends Game {
 	}
 
 	private normalizeFlame(): void {
-		sound.volume('fireplace', 0.5);
+		sound.volume('fireplace', 0.2);
 		if (this.normalEmitter) {
 			this.normalEmitter.emit = true;
 		}

@@ -2,6 +2,7 @@ import { Container, Text, TextStyle, Sprite, Assets } from 'pixi.js';
 import { GameManager } from '../core/GameManager';
 import { Button } from '../ui/Button';
 import { scaled, resizeToFit } from '../core/Utils';
+import { sound } from '@pixi/sound';
 
 /**
  * Main menu scene with game selection buttons, animated background video, and blinking instruction text.
@@ -58,6 +59,7 @@ export class MainMenu extends Container {
 		const videoTexture = Assets.get('background-video-texture-space');
 		this.backgroundVideo = new Sprite(videoTexture);
 		this.addChildAt(this.backgroundVideo, 0);
+		sound.play('space_loop', { loop: true, volume: 0.2, speed: 0.8 });
 	}
 
 	private buildUI(): void {
@@ -199,6 +201,7 @@ export class MainMenu extends Container {
 	}
 
 	public destroy(): void {
+		sound.stop('space_loop');
 		this.title.destroy();
 		this.subtitle.destroy();
 		this.buttons.destroy();
