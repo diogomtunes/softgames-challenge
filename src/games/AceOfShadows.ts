@@ -1,4 +1,4 @@
-import { Sprite, Assets, Container, Texture } from 'pixi.js';
+import { Sprite, Assets, Container } from 'pixi.js';
 import { Button } from '../ui/Button';
 import { Game } from '../core/Game';
 import { scaled, resizeToFit } from '../core/Utils';
