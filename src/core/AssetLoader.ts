@@ -13,12 +13,19 @@ const regularAssets: AssetList = [
 	'assets/sprites/duel_disk.png',
 	'assets/sprites/duel_disk_card_holder.png',
 	'assets/sprites/street.jpg',
+	'assets/sprites/exodia_forbidden_one.png',
+	'assets/sprites/exodia_left_arm.png',
+	'assets/sprites/exodia_left_leg.png',
+	'assets/sprites/exodia_right_arm.png',
+	'assets/sprites/exodia_right_leg.png',
 	// Magic Words
 	'assets/sprites/neighbourhood.jpg',
 	'assets/sprites/unknown.png',
 ];
 
 const backgroundVideoAssets: AssetList = ['assets/videos/space.mp4'];
+
+const videoAssets: AssetList = ['assets/videos/exodia_obliterate.mp4'];
 
 const dialogueAssets: AssetList = [
 	// 'dialogue/magicwords.json',
@@ -34,7 +41,7 @@ const audioAssets: AssetList = [
 	// Ace of Shadows
 	'assets/audio/deal_1.mp3',
 	'assets/audio/deal_2.mp3',
-	'assets/audio/card_flip.mp3', // UNUSED
+	'assets/audio/card_flip.mp3',
 	'assets/audio/yu-gi-oh_full_theme.mp3',
 	// Magic Words
 	'assets/audio/dialogue_next.mp3',
@@ -83,6 +90,7 @@ export class AssetLoader {
 		this.totalAssets =
 			regularAssets.length +
 			backgroundVideoAssets.length +
+			videoAssets.length +
 			dialogueAssets.length +
 			particleConfigAssets.length +
 			audioAssets.length;
@@ -91,6 +99,7 @@ export class AssetLoader {
 		await Promise.all([
 			this.loadRegularAssets(regularAssets),
 			this.createBackgroundVideoTexture(backgroundVideoAssets),
+			this.loadVideos(videoAssets),
 			this.loadDialogueData(dialogueAssets),
 			this.loadParticleConfigs(particleConfigAssets),
 			this.loadAudioAssets(audioAssets),
@@ -145,6 +154,44 @@ export class AssetLoader {
 			for (let i = 0; i < audioAssets.length; i++) {
 				this.markAssetComplete();
 			}
+		}
+	}
+
+	private async loadVideos(videoAssets: AssetList): Promise<void> {
+		try {
+			const videoPromises = videoAssets.map((videoPath, i) => {
+				return new Promise<void>((resolve, reject) => {
+					const videoElement = document.createElement('video');
+					videoElement.src = videoPath;
+					videoElement.loop = false;
+					videoElement.autoplay = false;
+					videoElement.muted = true;
+					videoElement.playsInline = true;
+
+					videoElement.addEventListener('loadeddata', () => {
+						const videoFileName =
+							videoPath.split('/').pop()?.split('.')[0] ||
+							`video-${i}`;
+						const cacheKey = `video-${videoFileName}`;
+
+						Assets.cache.set(cacheKey, videoElement);
+						this.markAssetComplete();
+						resolve();
+					});
+
+					videoElement.addEventListener('error', error => {
+						console.error(`Failed to load video ${i}:`, error);
+						reject(error);
+					});
+
+					videoElement.load();
+				});
+			});
+
+			await Promise.all(videoPromises);
+		} catch (error) {
+			console.error('Failed to load videos:', error);
+			throw error;
 		}
 	}
 

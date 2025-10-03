@@ -1,8 +1,15 @@
-import { Sprite, Assets, Container } from 'pixi.js';
+import { Sprite, Assets, Container, Texture } from 'pixi.js';
 import { Button } from '../ui/Button';
 import { Game } from '../core/Game';
 import { scaled, resizeToFit } from '../core/Utils';
 import { sound } from '@pixi/sound';
+
+interface VideoFadeAnimation {
+	isActive: boolean;
+	duration: number;
+	fadeTimeElapsed: number;
+	isFadeIn: boolean;
+}
 
 class Card extends Sprite {
 	// Position tracking
@@ -15,6 +22,10 @@ class Card extends Sprite {
 	moveTimeElapsed: number = 0;
 	initialRotation: number = 0;
 	targetRotation: number = 0;
+
+	// Flip state
+	flipTimeElapsed: number = 0;
+	textureChanged: boolean = false;
 
 	constructor(texture: any) {
 		super(texture);
@@ -40,12 +51,14 @@ export class AceOfShadows extends Game {
 
 	// UI Elements
 	private hurryUpButton: Button | null = null;
+	private winButton: Button | null = null;
 	private background!: Sprite;
 	private topDuelDisk!: Sprite;
 	private bottomDuelDisk!: Sprite;
 	private topCardHolder!: Sprite;
 	private bottomCardHolder!: Sprite;
 	private cardContainer!: Container;
+	private victoryVideoElement: HTMLVideoElement | null = null;
 
 	// Card Management
 	private cards: Card[] = [];
@@ -53,10 +66,43 @@ export class AceOfShadows extends Game {
 	private bottomStack: Card[] = [];
 	private mainStack: Card[] = [];
 	private movingCards: Card[] = [];
+	private flippingCards: Card[] = [];
+	private cardHolderPositions: { x: number; y: number; rotation: number }[] =
+		[
+			{ x: 0, y: 0, rotation: 0 },
+			{ x: 0, y: 0, rotation: 0 },
+			{ x: 0, y: 0, rotation: 0 },
+			{ x: 0, y: 0, rotation: 0 },
+			{ x: 0, y: 0, rotation: 0 },
+		];
+	private cardHolderTextures: string[] = [
+		'assets/sprites/exodia_right_leg.png',
+		'assets/sprites/exodia_right_arm.png',
+		'assets/sprites/exodia_forbidden_one.png',
+		'assets/sprites/exodia_left_arm.png',
+		'assets/sprites/exodia_left_leg.png',
+	];
+	private flippedCards = 0;
+	private flippedTextures = 0;
 	private moveCooldown: number = 0;
+	private dealCardCooldown: number = 0;
+	private flipCardCooldown: number = 500;
 	private moveInterval: number = 1000; // 1 second
 	private animationDuration: number = 2000; // 2 seconds
+	private flipAnimationDuration: number = 500; // 0.5 seconds
 	private currentTarget: 'top' | 'bottom' = 'top';
+
+	// Win sequence properties
+	private cardsInHolders: Card[] = [];
+	private videoFadeAnimation: VideoFadeAnimation = {
+		isActive: false,
+		duration: 0,
+		fadeTimeElapsed: 0,
+		isFadeIn: false,
+	};
+	private readonly winSequenceDealCooldown: number = 200;
+	private readonly winSequenceFlipCooldown: number = 250;
+	private victoryVideoTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// Speed boost properties
 	private readonly boostedMoveInterval: number = 10;
@@ -91,10 +137,25 @@ export class AceOfShadows extends Game {
 			onClick: () => this.toggleSpeedBoost(),
 		});
 		this.foregroundContainer.addChild(this.hurryUpButton);
+
+		// Win button (initially hidden)
+		this.winButton = new Button({
+			text: 'Press to win',
+			color: 0x4caf50, // Green
+			width: 400,
+			height: 100,
+			fontSize: 32,
+			emoji: '😱',
+			borderRadius: 8,
+			onClick: () => this.startWinSequence(),
+		});
+		this.winButton.visible = false;
+		this.foregroundContainer.addChild(this.winButton);
 	}
 
 	public start(): void {
 		this.app.ticker.add(this.update, this);
+		sound.play('yu-gi-oh_full_theme', { loop: true, volume: 0.2 });
 	}
 
 	/**
@@ -110,6 +171,15 @@ export class AceOfShadows extends Game {
 		if (this.moveCooldown <= 0 && this.mainStack.length > 0) {
 			this.dealTopCard();
 			this.moveCooldown = this.moveInterval;
+		}
+
+		// Show win button when all cards are dealt
+		if (
+			this.mainStack.length === 0 &&
+			this.winButton &&
+			!this.winButton.visible
+		) {
+			this.winButton.visible = true;
 		}
 
 		// Update moving cards
@@ -145,6 +215,40 @@ export class AceOfShadows extends Game {
 				this.movingCards.splice(i, 1);
 			}
 		}
+
+		// Update flip animations for cards that are currently flipping
+		for (let i = this.flippingCards.length - 1; i >= 0; i--) {
+			const card = this.flippingCards[i];
+
+			card.flipTimeElapsed += this.app.ticker.deltaMS;
+			const progress = Math.min(
+				card.flipTimeElapsed / this.flipAnimationDuration,
+				1
+			);
+
+			// Create a 3D flip effect by scaling the width
+			// At the halfway point, change the texture
+			const scaleX = scaled(
+				Math.abs(Math.cos(progress * Math.PI)) * this.CARD_SCALE_RESIZE
+			);
+			card.scale.x = scaleX;
+			if (progress >= 0.5 && !card.textureChanged) {
+				card.texture = Assets.get(
+					this.cardHolderTextures[this.flippedTextures]
+				);
+				card.textureChanged = true;
+				this.flippedTextures++;
+			}
+
+			// Complete the flip
+			if (progress >= 1) {
+				card.scale.x = scaled(
+					Math.abs(Math.cos(Math.PI)) * this.CARD_SCALE_RESIZE
+				);
+				// Remove completed flip from the array
+				this.flippingCards.splice(i, 1);
+			}
+		}
 	}
 
 	public onResize(): void {
@@ -168,6 +272,7 @@ export class AceOfShadows extends Game {
 
 			// Update deck end positions after repositioning and rescaling duel disks
 			this.updateEndPositions();
+			this.updateCardHolderPositions();
 		}
 
 		// Card holders
@@ -193,9 +298,24 @@ export class AceOfShadows extends Game {
 				scaled(this.HURRY_UP_BUTTON_OFFSET);
 			this.hurryUpButton.y = this.app.screen.height * 0.5;
 		}
+
+		// Win button (centered)
+		if (this.winButton && this.winButton.parent) {
+			this.winButton.x = this.app.screen.width * 0.5;
+			this.winButton.y = this.app.screen.height * 0.5;
+		}
 	}
 
 	public destroy(): void {
+		sound.stop('yu-gi-oh_full_theme');
+
+		if (this.victoryVideoTimeout) {
+			clearTimeout(this.victoryVideoTimeout);
+		}
+		this.app.ticker.remove(this.dealCardToHolders, this);
+		this.app.ticker.remove(this.flipDealtCards, this);
+		this.app.ticker.remove(this.updateVideoFade, this);
+
 		this.cards.forEach(card => {
 			card.destroy();
 		});
@@ -204,12 +324,20 @@ export class AceOfShadows extends Game {
 		this.bottomStack = [];
 		this.mainStack = [];
 		this.movingCards = [];
+		this.flippingCards = [];
+		this.cardsInHolders = [];
+		this.cardHolderPositions = [];
 
 		if (this.topDuelDisk) this.topDuelDisk.destroy();
 		if (this.bottomDuelDisk) this.bottomDuelDisk.destroy();
 		if (this.topCardHolder) this.topCardHolder.destroy();
 		if (this.bottomCardHolder) this.bottomCardHolder.destroy();
 		if (this.cardContainer) this.cardContainer.destroy();
+		if (this.winButton) this.winButton.destroy();
+		if (this.victoryVideoElement) {
+			this.victoryVideoElement.pause();
+			this.victoryVideoElement.remove();
+		}
 		this.background.destroy();
 	}
 
@@ -336,6 +464,18 @@ export class AceOfShadows extends Game {
 				card.targetY = stackY;
 				card.targetRotation = Math.PI * 0.5;
 				card.rotation = Math.PI * 0.5;
+			}
+		});
+
+		// Cards in holders (win sequence)
+		this.cardsInHolders.forEach((card, index) => {
+			if (index < this.cardHolderPositions.length) {
+				const holderPos = this.cardHolderPositions[index];
+				card.x = holderPos.x;
+				card.y = holderPos.y;
+				card.targetX = holderPos.x;
+				card.targetY = holderPos.y;
+				card.targetRotation = card.rotation;
 			}
 		});
 	}
@@ -476,5 +616,195 @@ export class AceOfShadows extends Game {
 		const volume = Math.random() * 0.05 + 0.1;
 		sound.volume(randomSound, volume);
 		sound.play(randomSound);
+	}
+
+	private updateCardHolderPositions(): void {
+		const cardHolderPositionOffsets = [
+			{ x: -0.3, y: 0.18, rotation: 0.12 },
+			{ x: -0.17, y: 0.25, rotation: 0.11 },
+			{ x: 0.02, y: 0.27, rotation: -0.05 },
+			{ x: 0.17, y: 0.25, rotation: -0.05 },
+			{ x: 0.31, y: 0.22, rotation: -0.05 },
+		];
+
+		for (let i = 0; i < 5; i++) {
+			const offsetX =
+				this.bottomDuelDisk.width * cardHolderPositionOffsets[i].x;
+			const offsetY =
+				this.bottomDuelDisk.height * cardHolderPositionOffsets[i].y;
+			this.cardHolderPositions[i].x = this.bottomDuelDisk.x + offsetX;
+			this.cardHolderPositions[i].y = this.bottomDuelDisk.y + offsetY;
+			this.cardHolderPositions[i].rotation =
+				Math.PI * cardHolderPositionOffsets[i].rotation;
+		}
+	}
+
+	private startWinSequence(): void {
+		// Remove the win button from the foreground container
+		if (this.winButton && this.winButton.parent) {
+			this.winButton.parent.removeChild(this.winButton);
+			this.winButton.destroy();
+			this.winButton = null;
+		}
+
+		// Deal 5 cards from bottom stack to card holders at boosted speed
+		this.app.ticker.add(this.dealCardToHolders, this);
+	}
+
+	private dealCardToHolders(): void {
+		// Deal only 5 cards
+		if (this.cardsInHolders.length >= 5) {
+			this.app.ticker.remove(this.dealCardToHolders, this);
+			this.app.ticker.add(this.flipDealtCards, this);
+			return;
+		}
+
+		this.dealCardCooldown -= this.app.ticker.deltaMS;
+		if (this.dealCardCooldown > 0) return;
+
+		const cardToDeal = this.bottomStack.pop()!;
+		const cardIndex = this.cardsInHolders.length;
+		const targetPos = this.cardHolderPositions[cardIndex];
+
+		// Set up movement
+		cardToDeal.targetX = targetPos.x;
+		cardToDeal.targetY = targetPos.y;
+		cardToDeal.moveTimeElapsed = 0;
+		cardToDeal.initialX = cardToDeal.x;
+		cardToDeal.initialY = cardToDeal.y;
+		cardToDeal.initialRotation = cardToDeal.rotation;
+		cardToDeal.targetRotation = targetPos.rotation;
+
+		this.cardsInHolders.push(cardToDeal);
+		this.movingCards.push(cardToDeal);
+		this.dealCardCooldown = this.winSequenceDealCooldown;
+		this.animationDuration = this.boostedAnimationDuration;
+		this.moveInterval = this.winSequenceDealCooldown - 50;
+
+		// Move card to top of display list so it appears on come out of the top of the deck
+		this.cardContainer.setChildIndex(
+			cardToDeal,
+			this.cardContainer.children.length - 1
+		);
+
+		const volume = Math.random() * 0.05 + 0.1;
+		sound.volume('deal_2', volume);
+		sound.play('deal_2');
+	}
+
+	private flipDealtCards(): void {
+		// Deal only 5 cards
+		if (this.flippedCards >= 5) {
+			this.app.ticker.remove(this.flipDealtCards, this);
+			this.victoryVideoTimeout = setTimeout(() => {
+				this.triggerVictoryVideo();
+			}, 1000);
+			return;
+		}
+
+		this.flipCardCooldown -= this.app.ticker.deltaMS;
+		if (this.flipCardCooldown > 0) return;
+
+		const cardIndex = this.flippedCards;
+		const cardToFlip = this.cardsInHolders[cardIndex]!;
+
+		// Start the flip animation
+		this.flippingCards.push(cardToFlip);
+		this.flipCardCooldown = this.winSequenceFlipCooldown;
+		this.flippedCards++;
+
+		// Play flip sound
+		sound.volume('card_flip', 0.3);
+		sound.play('card_flip');
+	}
+
+	private triggerVictoryVideo(): void {
+		this.app.ticker.add(this.updateVideoFade, this);
+
+		// Get cached video element
+		this.victoryVideoElement! = Assets.get('video-exodia_obliterate');
+		this.victoryVideoElement.currentTime = 0;
+		this.victoryVideoElement.muted = false;
+		this.victoryVideoElement.volume = 0.1;
+
+		// Configure video for full-screen overlay
+		this.victoryVideoElement.style.position = 'fixed';
+		this.victoryVideoElement.style.top = '0';
+		this.victoryVideoElement.style.left = '0';
+		this.victoryVideoElement.style.width = '100vw';
+		this.victoryVideoElement.style.height = '100vh';
+		this.victoryVideoElement.style.objectFit = 'cover';
+		this.victoryVideoElement.style.objectPosition = 'center center';
+		this.victoryVideoElement.style.opacity = '0';
+
+		// Add video element to the DOM
+		document.body.appendChild(this.victoryVideoElement);
+
+		// Start fade-in animation
+		this.startVideoFade(true);
+
+		// Play the video
+		this.victoryVideoElement.play().catch(error => {
+			console.error('Failed to play victory video:', error);
+		});
+
+		// Clean up when video ends
+		this.victoryVideoElement.addEventListener('ended', () => {
+			this.startVideoFade(false);
+		});
+	}
+
+	private startVideoFade(isFadeIn: boolean): void {
+		const fadeDuration = isFadeIn ? 1500 : 800; // 1.5s fade-in, 0.8s fade-out
+		this.videoFadeAnimation = {
+			isActive: true,
+			duration: fadeDuration,
+			fadeTimeElapsed: 0,
+			isFadeIn: isFadeIn,
+		};
+	}
+
+	private updateVideoFade(): void {
+		if (!this.videoFadeAnimation.isActive || !this.victoryVideoElement)
+			return;
+
+		this.videoFadeAnimation.fadeTimeElapsed += this.app.ticker.deltaMS;
+		const progress =
+			this.videoFadeAnimation.fadeTimeElapsed /
+			this.videoFadeAnimation.duration;
+
+		let easeProgress: number;
+		let opacity: number;
+
+		if (this.videoFadeAnimation.isFadeIn) {
+			// Ease out animation for fade-in
+			easeProgress = 1 - Math.pow(1 - progress, 3);
+			opacity = easeProgress;
+			sound.volume('yu-gi-oh_full_theme', 0.2 - easeProgress * 0.2); // Fade out the music
+		} else {
+			// Ease in animation for fade-out
+			easeProgress = Math.pow(progress, 3);
+			opacity = 1 - easeProgress;
+			sound.volume('yu-gi-oh_full_theme', easeProgress * 0.2); // Bring music back
+		}
+		this.victoryVideoElement.style.opacity = opacity.toString();
+
+		if (progress >= 1) {
+			// Animation complete
+			this.videoFadeAnimation.isActive = false;
+
+			if (!this.videoFadeAnimation.isFadeIn) {
+				// Fade-out complete, cleanup
+				this.cleanupVictoryVideo();
+			}
+		}
+	}
+
+	private cleanupVictoryVideo(): void {
+		if (this.victoryVideoElement) {
+			this.victoryVideoElement.pause();
+			this.victoryVideoElement.remove();
+			this.victoryVideoElement = null;
+		}
 	}
 }
