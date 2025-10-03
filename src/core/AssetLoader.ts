@@ -1,6 +1,7 @@
 import { Assets, Texture } from 'pixi.js';
 import { LoadingScreen } from '../scenes/LoadingScreen';
 import { convertUrlToBase64 } from './Utils';
+import { sound } from '@pixi/sound';
 
 type AssetList = string[];
 
@@ -27,6 +28,23 @@ const dialogueAssets: AssetList = [
 const particleConfigAssets: AssetList = [
 	'assets/particles/flame.json',
 	'assets/particles/flame_hotter.json',
+];
+
+const audioAssets: AssetList = [
+	// Ace of Shadows
+	'assets/audio/deal_1.mp3',
+	'assets/audio/deal_2.mp3',
+	'assets/audio/deal_3.mp3',
+	'assets/audio/card_flip.mp3', // UNUSED
+	// Magic Words
+	'assets/audio/dialogue_next.mp3',
+	// Phoenix Flame,
+	'assets/audio/fireplace.mp3',
+	'assets/audio/flame_on.mp3',
+	// Main Menu
+	// TODO ambient music
+	'assets/audio/button_hover.mp3',
+	'assets/audio/button_click.mp3',
 ];
 
 /**
@@ -65,7 +83,8 @@ export class AssetLoader {
 			regularAssets.length +
 			backgroundVideoAssets.length +
 			dialogueAssets.length +
-			particleConfigAssets.length;
+			particleConfigAssets.length +
+			audioAssets.length;
 
 		// Execute all tasks in parallel
 		await Promise.all([
@@ -73,6 +92,7 @@ export class AssetLoader {
 			this.createBackgroundVideoTexture(backgroundVideoAssets),
 			this.loadDialogueData(dialogueAssets),
 			this.loadParticleConfigs(particleConfigAssets),
+			this.loadAudioAssets(audioAssets),
 		]);
 
 		console.log('Assets preloaded successfully');
@@ -87,6 +107,44 @@ export class AssetLoader {
 				.then(() => resolve())
 				.catch(error => reject(error));
 		});
+	}
+
+	private async loadAudioAssets(audioAssets: AssetList): Promise<void> {
+		try {
+			const audioPromises = audioAssets.map(async asset => {
+				const alias =
+					asset.split('/').pop()?.split('.')[0] || 'unknown';
+
+				return new Promise<void>(resolve => {
+					try {
+						sound.add(alias, {
+							volume: 0.5,
+							url: asset,
+							preload: true,
+							loaded: () => {
+								this.markAssetComplete();
+								resolve();
+							},
+						});
+					} catch (error) {
+						console.error(
+							`Failed to load audio asset ${asset}:`,
+							error
+						);
+						this.markAssetComplete(); // Still mark as complete to avoid hanging
+						resolve();
+					}
+				});
+			});
+
+			await Promise.all(audioPromises);
+		} catch (error) {
+			console.error('Failed to load audio assets:', error);
+			// Mark remaining assets as complete to avoid hanging
+			for (let i = 0; i < audioAssets.length; i++) {
+				this.markAssetComplete();
+			}
+		}
 	}
 
 	private async createBackgroundVideoTexture(

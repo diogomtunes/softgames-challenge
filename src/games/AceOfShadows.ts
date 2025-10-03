@@ -2,6 +2,7 @@ import { Sprite, Assets, Container } from 'pixi.js';
 import { Button } from '../ui/Button';
 import { Game } from '../core/Game';
 import { scaled, resizeToFit } from '../core/Utils';
+import { sound } from '@pixi/sound';
 
 class Card extends Sprite {
 	// Position tracking
@@ -470,5 +471,10 @@ export class AceOfShadows extends Game {
 			topCard,
 			this.cardContainer.children.length - 1
 		);
+
+		const randomSound = `deal_${Math.floor(Math.random() * 3) + 1}`;
+		const volume = Math.random() * 0.1 + 0.3;
+		sound.volume(randomSound, volume);
+		sound.play(randomSound);
 	}
 }

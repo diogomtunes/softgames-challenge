@@ -9,6 +9,7 @@ import {
 import { Emitter } from '@pixi/particle-emitter';
 import { Game } from '../core/Game';
 import { isMobileDevice, isUsingHeight, scaled } from '../core/Utils';
+import { sound } from '@pixi/sound';
 
 /**
  * Interactive particle flame game with mouse/touch controls to intensify the flame.
@@ -220,6 +221,7 @@ export class PhoenixFlame extends Game {
 
 	public start(): void {
 		this.app.ticker.add(this.update, this);
+		sound.play('fireplace');
 	}
 
 	public onResize(): void {
@@ -307,6 +309,8 @@ export class PhoenixFlame extends Game {
 	}
 
 	private intensifyFlame(): void {
+		sound.play('flame_on');
+		sound.volume('fireplace', 1);
 		if (this.normalEmitter) {
 			this.normalEmitter.emit = false;
 		}
@@ -316,6 +320,7 @@ export class PhoenixFlame extends Game {
 	}
 
 	private normalizeFlame(): void {
+		sound.volume('fireplace', 0.5);
 		if (this.normalEmitter) {
 			this.normalEmitter.emit = true;
 		}
@@ -331,6 +336,8 @@ export class PhoenixFlame extends Game {
 	}
 
 	public destroy(): void {
+		sound.stop('fireplace');
+		sound.stop('flame_on');
 		if (this.normalEmitter) {
 			this.normalEmitter.destroy();
 		}

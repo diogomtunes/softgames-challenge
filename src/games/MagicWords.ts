@@ -9,6 +9,7 @@ import {
 	Assets,
 	HTMLText,
 } from 'pixi.js';
+import { sound } from '@pixi/sound';
 import { Game } from '../core/Game';
 import {
 	textToHtmlWithEmojis,
@@ -229,6 +230,8 @@ export class MagicWords extends Game {
 	};
 
 	private advanceDialogue = (): void => {
+		sound.play('dialogue_next');
+
 		if (this.isDialogueComplete()) {
 			// Hide completion text and restart dialogue index
 			this.completionText.visible = false;
