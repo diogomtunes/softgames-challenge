@@ -21,6 +21,7 @@ A TypeScript-based tech showcase built with PixiJS v7, featuring three interacti
 ### 🤝 Dependencies
 
 - **[@pixi/particle-emitter](https://github.com/pixijs-userland/particle-emitter)**
+- **[@pixi/sound](https://github.com/pixijs/sound)**
 
 &nbsp;
 
@@ -42,7 +43,8 @@ Cards smoothly animate with rotation effects, showcased at different speeds.
 ⭐ Yu-Gi-Oh! duel disk visual theme for added nostalgia!  
 ⭐ Smooth movement animation with randomized rotations  
 ⭐ Multi-layered graphics so simulate decks fitting into the deck slots  
-⭐ Speed up button
+⭐ Speed up button  
+⭐ Card deal sounds  
 
 &nbsp;
 
@@ -58,7 +60,7 @@ An interactive dialogue system that combines text and custom emojis, reading dia
 
 📈 **Extra credit:**  
 ⭐ Visual novel style visuals during dialogue  
-⭐ User input to advance dialogue  
+⭐ User input to advance dialogue, with sound feedback  
 ⭐ Animated UI elements
 
 &nbsp;
@@ -74,8 +76,9 @@ Users can intensify the flame by clicking/tapping, with real-time particle count
 
 📈 **Extra credit:**  
 ⭐ Particle count  
-⭐ User input to intensify flame effect  
-⭐ Flame effect follows cursor
+⭐ User input to intensify flame effect, with sound feedback  
+⭐ Flame effect follows cursor  
+⭐ Ambience sound  
 
 &nbsp;
 
@@ -95,6 +98,7 @@ Users can intensify the flame by clicking/tapping, with real-time particle count
 ⭐ Concurrent asset loading  
 ⭐ Assets pre-loaded and cached  
 ⭐ Dynamic menu buttons  
+⭐ Multiple sound effects  
 ⭐ Animated menu background and visuals  
 ⭐ Text changes depending on device (Desktop vs Mobile)  
 ⭐ [JavaDoc style comments](https://www.baeldung.com/javadoc)
