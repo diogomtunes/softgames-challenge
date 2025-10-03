@@ -13,6 +13,7 @@
 	},
 	"dependencies": {
 		"@pixi/particle-emitter": "^5.0.8",
+		"@pixi/sound": "^5.2.3",
 		"pixi.js": "^7.4.3",
 		"prettier": "^3.6.2"
 	},
